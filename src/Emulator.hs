@@ -25,6 +25,10 @@ module Emulator where
     joystickToChar :: Joystick -> CUChar
     joystickToChar (Joystick r l d u st s b a) = fromListBE [r,l,d,u,st,s,b,a]
 
+    fromListJ :: [Bool] -> Joystick
+    fromListJ [r,l,d,u,b,a] = Joystick r l d u False False b a
+    fromListJ [r,l,d,u,st,se,b,a] = Joystick r l d u st se b a
+
     data Color = Color { red :: Word8, green :: Word8, blue :: Word8, alpha :: Word8 }
 
     {-
