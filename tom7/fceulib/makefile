@@ -1,8 +1,8 @@
 
 # Makefile made by tom7.
-default: emulator_test.exe difftrace.exe
+default: emulator.so
 
-all: emulator_test.exe fm2tocc.exe difftrace.exe dumptrace.exe
+all: emulator.so
 
 # -fno-strict-aliasing
 # -Wstrict-overflow=3
@@ -10,26 +10,14 @@ all: emulator_test.exe fm2tocc.exe difftrace.exe dumptrace.exe
 CXXFLAGS=-Wall -Wno-deprecated -Wno-sign-compare -I/usr/local/include -fpic
 # XXX -O2
 OPT=-O2  # -O3 -fno-strict-aliasing
-
-ifdef WIN64 
-CXX=x86_64-w64-mingw32-g++
-CC=x86_64-w64-mingw32-g++
-WINCFLAGS= -D__MINGW32__
-WINLINK=-Wl,--subsystem,console -static -fpic
-else
 CXX=g++
 CC=gcc
-endif
 
 # Suppress compilation commands, but show some indication of progress.
 # (Explicitly invoke bash to get shell builtin, since on OS X echo
 # otherwise treats -n literally.)
 %.o : %.cc
-	@$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
-	@bash -c "echo -n '.'"
-
-# If you don't have SDL, you can leave these out, and maybe it still works.
-LINKSDL= -mno-cygwin -lm -luser32 -lgdi32 -lwinmm -ldxguid
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 # Emulator uses city, yeah? See if we can make this work with no deps.
 INCLUDES=-I "../cc-lib" -I "../cc-lib/city" -I "."
@@ -55,7 +43,7 @@ DRIVERS_COMMON_OBJECTS=drivers/common/nes_ntsc.o
 EMUOBJECTS=$(FCEUOBJECTS) $(MAPPEROBJECTS) $(UTILSOBJECTS) $(PALLETESOBJECTS) $(BOARDSOBJECTS) $(INPUTOBJECTS) $(DRIVERS_COMMON_OBJECTS)
 
 # included in all tests, etc.
-BASEOBJECTS=$(CCLIBOBJECTS)
+BASEOBJECTS=../cc-lib/util.o
 
 FCEULIB_OBJECTS=emulator.o headless-driver.o stringprintf.o trace.o tracing.o
 
@@ -67,31 +55,7 @@ OBJECTS=$(BASEOBJECTS) $(EMUOBJECTS) $(FCEULIB_OBJECTS)
 
 # without static, can't find lz or lstdcxx maybe?
 LFLAGS= -m64 $(WINLINK) $(LINKNETWORKING) -lz $(OPT) $(FLTO) $(PROFILE)
-LFGLGS_LIN= -Wl -static -lz $(OPT) $(FLTO) $(PROFILE)
-# -Wl,--subsystem,console
-# -static -fwhole-program
-# -static
 
 emulator.so : $(OBJECTS)
-	$(CXX) emulator.o -o emulator.so $(LFLAGS)
+	$(CXX) -fpic -shared $(OBJECTS) -o emulator.so $(LFLAGS)
 
-fm2tocc.exe : $(OBJECTS) fm2tocc.o simplefm2.o
-	$(CXX) $^ -o $@ $(LFLAGS)
-
-difftrace.exe : stringprintf.o trace.o difftrace.o
-	$(CXX) $^ -o $@ $(LFLAGS)
-
-dumptrace.exe : stringprintf.o trace.o dumptrace.o
-	$(CXX) $^ -o $@ $(LFLAGS)
-
-emulator_test.exe : $(OBJECTS) test-util.o emulator_test.o simplefm2.o
-	$(CXX) $^ -o $@ $(LFLAGS)
-
-test : emulator_test.exe
-	time ./emulator_test.exe
-
-clean :
-	rm -f *_test.exe difftrace.exe *.o $(EMUOBJECTS) $(CCLIBOBJECTS) gmon.out
-
-veryclean : clean
-	rm -f trace.bin
