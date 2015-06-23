@@ -116,8 +116,9 @@ void Destroy() {
   FCEUI_Kill();
 }
 
-void Create(const string &romfile, uint8* joydata) {
+void Create(char* romfileC, uint8* joydata) {
   // initialize the infrastructure
+  string romfile (romfileC);
   int error = FCEUI_Initialize();
   if (error != 1) {
     fprintf(stderr, "Error initializing.\n");
@@ -199,14 +200,12 @@ void GetSound(vector<int16> *wav) {
   }
 }
 
-void Save(uint8* out) {
+unsigned long Save(uint8** out_ptr) {
   vector<uint8> data;
   FCEUSS_SaveRAW(&data);
-  if (out) {
-    free(out);
-  }
-  out = (uint8*)malloc(data.size()*sizeof(uint8));
-  memcpy(out, &data, data.size()*sizeof(uint8));
+  (*out_ptr) = (uint8*)malloc(data.size());
+  memcpy((*out_ptr), data.data(), data.size());
+  return data.size();
 }
 
 void Load(uint8 *in) {

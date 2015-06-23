@@ -21,10 +21,9 @@ using namespace std;
 struct FCEUGI;
 
 // Initializes the emulator
-void Create(const string &romfile, uint8* joydata);
+void Create(char* romfile, uint8* joydata);
 void Destroy(void); 
-void Save(uint8 *out);
-void Load(uint8 *in);
+unsigned long Save(uint8 **out);
 
 // Make one emulator step with the given input.
 // Bits from MSB to LSB are
@@ -33,7 +32,7 @@ void Load(uint8 *in);
 // Consider StepFull if you want video or CachingStep if you
 // are doing search and might execute this same step again.
 void Step(void);
-uint8* GetMemory();
+uint8* GetMemory(void);
 
 // Fancy stuff.
 

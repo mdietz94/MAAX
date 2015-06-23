@@ -1,8 +1,8 @@
 
 # Makefile made by tom7.
-default: emulator.so
+default: libemulator.so
 
-all: emulator.so
+all: libemulator.so
 
 # -fno-strict-aliasing
 # -Wstrict-overflow=3
@@ -56,6 +56,6 @@ OBJECTS=$(BASEOBJECTS) $(EMUOBJECTS) $(FCEULIB_OBJECTS)
 # without static, can't find lz or lstdcxx maybe?
 LFLAGS= -m64 $(WINLINK) $(LINKNETWORKING) -lz $(OPT) $(FLTO) $(PROFILE)
 
-emulator.so : $(OBJECTS)
-	$(CXX) -fpic -shared $(OBJECTS) -o emulator.so $(LFLAGS)
+libemulator.so : $(OBJECTS)
+	$(CXX) -fpic -shared $(OBJECTS) -o libemulator.so $(LFLAGS)
 
