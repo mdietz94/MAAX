@@ -42,16 +42,19 @@ data Network = Network { nodes :: [Node], edges :: [(NodeId,NodeId)] }
 getNode :: [Node] -> NodeId -> Node
 getNode ns nId = head $ filter (\n -> uid n == nId) ns
 
+checkId :: NodeId -> Node -> Bool
+checkId nId n = uid n == nId
+
 runNetwork :: Network -> [Float] -> Joystick
 runNetwork (Network nodes edges) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
     where
-        toButton name = (>0.5) . fst . head . filter (\(_,l) -> l == name) $ outs
+        toButton name = (>0.5) . fst . head . filter ((==name) . snd) $ outs
         outs = map (evaluateNode . getNode nodes . snd) $ filter ((== Output "") . nType . getNode nodes . snd) edges
         evaluateNode (Node f w (Input i) _)      = (w * f i, "")
         evaluateNode (Node f w Default n)        = (sum (map (fst . evaluateNode) (lastLayer n)), "")
         evaluateNode (Node f w (Output label) n) = (sum (map (fst . evaluateNode) (lastLayer n)), label)
         lastLayer :: NodeId -> [Node]
-        lastLayer n = map (\(x,_) -> head $ filter (\(Node _ _ _ i) -> x == i) nodes) $ filter (\(_,e) -> e == n) edges
+        lastLayer n = map (\(x,_) -> head $ filter (checkId x) nodes) $ filter (\e -> snd e == n) edges
 
 {-
 
@@ -86,50 +89,59 @@ breedChild n@(Network nodes edges) n'@(Network nodes' edges') (c:(r:rs)) = mutat
          | c < 0.75 = foldl' (switchGenome n') n $ zip (map uid nodes) rs
          | otherwise = Network nodes edges
 
+deleteLinks _ [] = []
+deleteLinks nId ((x,y):xs)
+  | x == nId || y == nId = deleteLinks nId xs
+  | otherwise      =  (x,y) : deleteLinks nId xs
+
 switchGenome (Network fromNodes fromEdges) (Network toNodes toEdges) (nId,r) = if r < 0.5 then Network toNodes toEdges else Network newNodes newEdges
     where
         newNode   = getNode fromNodes nId
         nodeEdges = filter (\(x,y) -> x == nId || y == nId) fromEdges
         newNodes  = newNode : delete newNode toNodes
-        newEdges  = nodeEdges ++ filter (\(x,y) -> x /= nId && y /= nId) toEdges
+        newEdges  = nodeEdges ++ deleteLinks nId toEdges
 
 mutate :: Network -> [Float] -> (Network,[Float])
-mutate (Network nodes edges) (r:rs)
-  | r < 0.1 = let (edges',rs') = mutateLinkA nodes edges rs in mutate (Network nodes edges') rs'
-  | r < 0.2 = let (edges',rs') = mutateLinkD nodes edges rs in mutate (Network nodes edges') rs'
+mutate n@(Network nodes edges) (r:rs)
+  | r < 0.1 = let (edges',rs') = mutateLinkA n rs in mutate (Network nodes edges') rs'
+  | r < 0.2 = let (edges',rs') = mutateLinkD n rs in mutate (Network nodes edges') rs'
   | r < 0.4 = let (nodes',rs') = mutateWeight nodes rs in mutate (Network nodes' edges) rs'
   | otherwise = (Network nodes edges,rs)
 
-mutateWeight nodes (c:(p':(i':rs))) = (take i nodes ++ [n] ++ drop (i+1) nodes, rs)
+mutateWeight :: [Node] -> [Float] -> ([Node],[Float])
+mutateWeight nodes (c:(p':(i:rs))) = (n : delete n nodes, rs)
     where
-        p = p' * 4.0 - 2.0
-        i = floor $ i' * fromIntegral  (length nodes)
-        n = nodes !! i
+        p = p' * 4.0 - 2.0 -- [-2.0,2.0)
+        n = getElementR nodes i
         w' = if c < 0.9
               then
                 weight n + smallScale * p
               else
                 largeScale * p
 
-mutateLinkA :: [Node] -> [(NodeId,NodeId)] -> [Float] -> ([(NodeId,NodeId)],[Float])
-mutateLinkA nodes edges (i1:(i2:(order':rs))) = (edges ++ edges',rs)
+getElementR :: [a] -> Float -> a
+getElementR xs r = xs !! floor ( r * fromIntegral (length xs))
+
+linkExists _ _ [] = False
+linkExists x y ((x1,y1):xs) = uid x == x1 && uid y == y1 || uid y == x1 && uid x == y1 || linkExists x y xs
+
+mutateLinkA :: Network -> [Float] -> ([(NodeId,NodeId)],[Float])
+mutateLinkA (Network nodes edges) (i1:(i2:(order:rs))) = (edges ++ edges',rs)
     where
-        n1 = nodes !! floor ( i1 * fromIntegral (length nodes))
-        n2 = nodes !! floor ( i2 * fromIntegral (length nodes))
-        order = order' < 0.5
+        n1 = getElementR nodes i1
+        n2 = getElementR nodes i2
         edges' 
-         | n1 == n2 || (nType n1 == Input 0 && nType n2 == Input 0) || ((uid n1,uid n2) `elem` edges) || ((uid n2,uid n1) `elem` edges) = []
-         | nType n1 == Input 0 || order = [(uid n1,uid n2)]
+         | n1 == n2 || (nType n1 == Input 0 && nType n2 == Input 0) || linkExists n1 n2 edges = []
+         | nType n1 == Input 0 || order < 0.5 = [(uid n1,uid n2)]
          | otherwise = [(uid n2,uid n1)] -- we're gonna create a connection n1 -> n2
 
-mutateLinkD :: [Node] -> [(NodeId,NodeId)] -> [Float] -> ([(NodeId,NodeId)],[Float])
-mutateLinkD nodes edges (i:rs) = (edges',rs)
+mutateLinkD :: Network -> [Float] -> ([(NodeId,NodeId)],[Float])
+mutateLinkD (Network nodes edges) (i:rs) = (if keep then edges else delete (n1,n2) edges,rs)
     where
-        (n1,n2) = edges !! floor (i * fromIntegral (length edges))
-        Just node1 = find (\(Node _ _ _ x) -> x == n1) nodes
-        Just node2 = find (\(Node _ _ _ x) -> x == n2) nodes
+        (n1,n2) = getElementR edges i
+        node1 = getNode nodes n1
+        node2 = getNode nodes n2
         -- don't want to remove the only thing coming from an input...
-        remove = not $ ((nType node1 == Input 0) && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
+        keep = ((nType node1 == Input 0) && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
         count1 = length . filter ((==n1) . fst) $ edges
         count2 = length . filter ((==n2) . snd) $ edges
-        edges' = if remove then delete (n1,n2) edges else edges
