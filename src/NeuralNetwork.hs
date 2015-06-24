@@ -2,8 +2,7 @@ module NeuralNetwork where
 
 import Emulator
 import System.Random
-import Prelude hiding (id)
-import Data.List (delete)
+import Data.List
 
 data NodeType = Input Float | Default | Output String
 instance Eq NodeType where
@@ -16,7 +15,9 @@ instance Eq NodeType where
 data Node = Node { f :: Float -> Float
                  , weight :: Float
                  , nType :: NodeType
-                 , id :: Int }
+                 , uid :: NodeId }
+
+type NodeId = Int
 
 instance Eq Node where
     (Node _ _ _ x) == (Node _ _ _ y) = x == y
@@ -24,7 +25,7 @@ instance Eq Node where
 instance Show Node where
     show (Node _ _ _ x) = "<Node: " ++ show x ++ ">"
 
-data Network = Network { nodes :: [Node], edges :: [(Node,Node)] }
+data Network = Network { nodes :: [Node], edges :: [(NodeId,NodeId)] }
 
 -- we will take as input some slices of RAM
 -- and we will output the keys to press.
@@ -38,15 +39,19 @@ data Network = Network { nodes :: [Node], edges :: [(Node,Node)] }
 -- wall may require moving left, which is a rare move, and might
 -- only be noticeable if we think we are 'stuck' but we can probably
 
+getNode :: [Node] -> NodeId -> Node
+getNode ns nId = head $ filter (\n -> uid n == nId) ns
+
 runNetwork :: Network -> [Float] -> Joystick
 runNetwork (Network nodes edges) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
     where
         toButton name = (>0.5) . fst . head . filter (\(_,l) -> l == name) $ outs
-        outs = map (evaluateNode . snd) $ filter (\(_,e) -> nType e == Output "") edges
-        evaluateNode   (Node f w (Input i) _)      = (w * f i, "")
-        evaluateNode n@(Node f w Default _)        = (sum (map (fst . evaluateNode) (lastLayer n)), "")
-        evaluateNode n@(Node f w (Output label) _) = (sum (map (fst . evaluateNode) (lastLayer n)), label)
-        lastLayer n = map fst $ filter (\(_,e) -> e == n) edges
+        outs = map (evaluateNode . getNode nodes . snd) $ filter ((== Output "") . nType . getNode nodes . snd) edges
+        evaluateNode (Node f w (Input i) _)      = (w * f i, "")
+        evaluateNode (Node f w Default n)        = (sum (map (fst . evaluateNode) (lastLayer n)), "")
+        evaluateNode (Node f w (Output label) n) = (sum (map (fst . evaluateNode) (lastLayer n)), label)
+        lastLayer :: NodeId -> [Node]
+        lastLayer n = map (\(x,_) -> head $ filter (\(Node _ _ _ i) -> x == i) nodes) $ filter (\(_,e) -> e == n) edges
 
 {-
 
@@ -70,37 +75,61 @@ We also mutate at each generation, we can do a few things
 -- 10% chance to reset completely
 smallScale = 0.2
 largeScale = 2.0
+crossOverChance = 0.75
 
-mutateWeight (Node f w n i) g = (Node f w' n i, g'')
+-- this presupposes that the fitness of network1 is greater than that of network2
+-- since if we don't crossover we just mutate the first
+breedChild :: Network -> Network -> [Float] -> (Network, [Float])
+breedChild n@(Network nodes edges) n'@(Network nodes' edges') (c:(r:rs)) = mutate newNet (drop (length nodes) rs)
     where
-        (c,g') = random g :: (Float,StdGen)
-        (p,g'') = randomR (-2.0,2.0) g
+       newNet 
+         | c < 0.75 = foldl' (switchGenome n') n $ zip (map uid nodes) rs
+         | otherwise = Network nodes edges
+
+switchGenome (Network fromNodes fromEdges) (Network toNodes toEdges) (nId,r) = if r < 0.5 then Network toNodes toEdges else Network newNodes newEdges
+    where
+        newNode   = getNode fromNodes nId
+        nodeEdges = filter (\(x,y) -> x == nId || y == nId) fromEdges
+        newNodes  = newNode : delete newNode toNodes
+        newEdges  = nodeEdges ++ filter (\(x,y) -> x /= nId && y /= nId) toEdges
+
+mutate :: Network -> [Float] -> (Network,[Float])
+mutate (Network nodes edges) (r:rs)
+  | r < 0.1 = let (edges',rs') = mutateLinkA nodes edges rs in mutate (Network nodes edges') rs'
+  | r < 0.2 = let (edges',rs') = mutateLinkD nodes edges rs in mutate (Network nodes edges') rs'
+  | r < 0.4 = let (nodes',rs') = mutateWeight nodes rs in mutate (Network nodes' edges) rs'
+  | otherwise = (Network nodes edges,rs)
+
+mutateWeight nodes (c:(p':(i':rs))) = (take i nodes ++ [n] ++ drop (i+1) nodes, rs)
+    where
+        p = p' * 4.0 - 2.0
+        i = floor $ i' * fromIntegral  (length nodes)
+        n = nodes !! i
         w' = if c < 0.9
               then
-                w + smallScale * p
+                weight n + smallScale * p
               else
                 largeScale * p
 
-mutateLinkA :: [Node] -> [(Node,Node)] -> StdGen -> ([(Node,Node)],StdGen)
-mutateLinkA nodes edges g = (edges ++ edges',g''')
+mutateLinkA :: [Node] -> [(NodeId,NodeId)] -> [Float] -> ([(NodeId,NodeId)],[Float])
+mutateLinkA nodes edges (i1:(i2:(order':rs))) = (edges ++ edges',rs)
     where
-        (i1,g')  = randomR (0,length nodes - 1) g
-        n1 = nodes !! i1
-        (i2,g'') = randomR (0,length nodes - 1) g
-        n2 = nodes !! i2
-        (order,g''') = randomR (False, True) g''
+        n1 = nodes !! floor ( i1 * fromIntegral (length nodes))
+        n2 = nodes !! floor ( i2 * fromIntegral (length nodes))
+        order = order' < 0.5
         edges' 
-         | (id n1 == id n2) || (nType n1 == Input 0 && nType n2 == Input 0) || ((n1,n2) `elem` edges) || ((n2,n1) `elem` edges) = []
-         | nType n1 == Input 0 || order = [(n1,n2)]
-         | otherwise = [(n2,n1)] -- we're gonna create a connection n1 -> n2
+         | n1 == n2 || (nType n1 == Input 0 && nType n2 == Input 0) || ((uid n1,uid n2) `elem` edges) || ((uid n2,uid n1) `elem` edges) = []
+         | nType n1 == Input 0 || order = [(uid n1,uid n2)]
+         | otherwise = [(uid n2,uid n1)] -- we're gonna create a connection n1 -> n2
 
-mutateLinkD :: [Node] -> [(Node,Node)] -> StdGen -> ([(Node,Node)],StdGen)
-mutateLinkD nodes edges g = (edges',g')
+mutateLinkD :: [Node] -> [(NodeId,NodeId)] -> [Float] -> ([(NodeId,NodeId)],[Float])
+mutateLinkD nodes edges (i:rs) = (edges',rs)
     where
-        (i,g') = randomR (0,length edges - 1) g
-        (n1,n2) = edges !! i
+        (n1,n2) = edges !! floor (i * fromIntegral (length edges))
+        Just node1 = find (\(Node _ _ _ x) -> x == n1) nodes
+        Just node2 = find (\(Node _ _ _ x) -> x == n2) nodes
         -- don't want to remove the only thing coming from an input...
-        remove = not $ ((nType n1 == Input 0) && count1 == 1) || ((nType n2 == Output "") && count2 == 1)
-        count1 = length . filter (\(x,_) -> x == n1) $ edges
-        count2 = length . filter (\(_,y) -> y == n2) $ edges
+        remove = not $ ((nType node1 == Input 0) && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
+        count1 = length . filter ((==n1) . fst) $ edges
+        count2 = length . filter ((==n2) . snd) $ edges
         edges' = if remove then delete (n1,n2) edges else edges
