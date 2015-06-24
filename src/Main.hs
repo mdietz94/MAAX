@@ -1,4 +1,5 @@
 import Emulator
+import NeuralNetwork
 import qualified Data.ByteString as B (writeFile)
 
 main = do

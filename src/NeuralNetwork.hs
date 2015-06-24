@@ -1,8 +1,28 @@
+module NeuralNetwork where
+
+import Emulator
+import System.Random
+import Prelude hiding (id)
+import Data.List (delete)
+
 data NodeType = Input Float | Default | Output String
+instance Eq NodeType where
+   (Input _) == (Input _) = True
+   Default == Default = True
+   (Output _) == (Output _) = True
+   _ == _ = False
+
+
 data Node = Node { f :: Float -> Float
                  , weight :: Float
                  , nType :: NodeType
-                 , id :: Int } deriving (Eq, Show)
+                 , id :: Int }
+
+instance Eq Node where
+    (Node _ _ _ x) == (Node _ _ _ y) = x == y
+
+instance Show Node where
+    show (Node _ _ _ x) = "<Node: " ++ show x ++ ">"
 
 data Network = Network { nodes :: [Node], edges :: [(Node,Node)] }
 
@@ -22,11 +42,11 @@ runNetwork :: Network -> [Float] -> Joystick
 runNetwork (Network nodes edges) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
     where
         toButton name = (>0.5) . fst . head . filter (\(_,l) -> l == name) $ outs
-        outs = map evaluateNode $ filter (\(_,e) -> (nType e) == (Output _)) edges
-        evaluateNode   (Node f w (Input i) _)      = (w * (f i), "")
-        evaluateNode n@(Node f w Default _)        = (sum (map evaluateNode (lastLayer n)), "")
-        evaluateNode n@(Node f w (Output label) _) = (sum (map evaluateNode (lastLayer n)), label)
-        lastLayer n = filter (\(_,e) -> e == n) edges
+        outs = map (evaluateNode . snd) $ filter (\(_,e) -> nType e == Output "") edges
+        evaluateNode   (Node f w (Input i) _)      = (w * f i, "")
+        evaluateNode n@(Node f w Default _)        = (sum (map (fst . evaluateNode) (lastLayer n)), "")
+        evaluateNode n@(Node f w (Output label) _) = (sum (map (fst . evaluateNode) (lastLayer n)), label)
+        lastLayer n = map fst $ filter (\(_,e) -> e == n) edges
 
 {-
 
@@ -48,12 +68,12 @@ We also mutate at each generation, we can do a few things
 
 -- 90% chance to make a small change
 -- 10% chance to reset completely
-scallScale = 0.2
+smallScale = 0.2
 largeScale = 2.0
 
 mutateWeight (Node f w n i) g = (Node f w' n i, g'')
     where
-        (c,g') = random g
+        (c,g') = random g :: (Float,StdGen)
         (p,g'') = randomR (-2.0,2.0) g
         w' = if c < 0.9
               then
@@ -61,24 +81,26 @@ mutateWeight (Node f w n i) g = (Node f w' n i, g'')
               else
                 largeScale * p
 
+mutateLinkA :: [Node] -> [(Node,Node)] -> StdGen -> ([(Node,Node)],StdGen)
 mutateLinkA nodes edges g = (edges ++ edges',g''')
     where
-        (n1,g')  = nodes !! (randomR (0,(length nodes) - 1) g)
-        (n2,g'') = nodes !! (randomR (0,(length nodes) - 1) g')
+        (i1,g')  = randomR (0,length nodes - 1) g
+        n1 = nodes !! i1
+        (i2,g'') = randomR (0,length nodes - 1) g
+        n2 = nodes !! i2
         (order,g''') = randomR (False, True) g''
-        edges' = if ((id n1) == (id n2)) || ((nType n1) == (Input _) && (nType n2) == (Input _)) || ((n1,n2) `elem` edges) || ((n2,n1) `elem` edges)
-            then []
-            else
-                if (nType n1) == (Input _) -- we're gonna create a connection n1 -> n2
-                        else [(n1,n2)]
-                else
-                    if order then [(n1,n2)] else [(n2,n1)]
+        edges' 
+         | (id n1 == id n2) || (nType n1 == Input 0 && nType n2 == Input 0) || ((n1,n2) `elem` edges) || ((n2,n1) `elem` edges) = []
+         | nType n1 == Input 0 || order = [(n1,n2)]
+         | otherwise = [(n2,n1)] -- we're gonna create a connection n1 -> n2
 
+mutateLinkD :: [Node] -> [(Node,Node)] -> StdGen -> ([(Node,Node)],StdGen)
 mutateLinkD nodes edges g = (edges',g')
     where
-        ((n1,n2),g') = edges !! (randomR (0,(length edges) - 1) g)
+        (i,g') = randomR (0,length edges - 1) g
+        (n1,n2) = edges !! i
         -- don't want to remove the only thing coming from an input...
-        remove = if (((nType n1) == (Input _)) && count1 == 1) || (((nType n2) == (Output _)) && count2 == 1) then False else True
+        remove = not $ ((nType n1 == Input 0) && count1 == 1) || ((nType n2 == Output "") && count2 == 1)
         count1 = length . filter (\(x,_) -> x == n1) $ edges
         count2 = length . filter (\(_,y) -> y == n2) $ edges
         edges' = if remove then delete (n1,n2) edges else edges
