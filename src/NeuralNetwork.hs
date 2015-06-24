@@ -4,7 +4,7 @@ import Emulator
 import System.Random
 import Data.List
 
-data NodeType = Input Float | Default | Output String
+data NodeType = Input String | Default | Output String
 instance Eq NodeType where
    (Input _) == (Input _) = True
    Default == Default = True
@@ -40,21 +40,20 @@ data Network = Network { nodes :: [Node], edges :: [(NodeId,NodeId)] }
 -- only be noticeable if we think we are 'stuck' but we can probably
 
 getNode :: [Node] -> NodeId -> Node
-getNode ns nId = head $ filter (\n -> uid n == nId) ns
+getNode ns nId = head $ filter ((==nId) . uid) ns
 
-checkId :: NodeId -> Node -> Bool
-checkId nId n = uid n == nId
-
-runNetwork :: Network -> [Float] -> Joystick
+runNetwork :: Network -> [(Float,String)] -> Joystick
 runNetwork (Network nodes edges) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
     where
         toButton name = (>0.5) . fst . head . filter ((==name) . snd) $ outs
-        outs = map (evaluateNode . getNode nodes . snd) $ filter ((== Output "") . nType . getNode nodes . snd) edges
-        evaluateNode (Node f w (Input i) _)      = (w * f i, "")
+        outs = map (evaluateNode . getNode nodes . snd) . nub . filter ((== Output "") . nType . getNode nodes . snd) $ edges
+        evaluateNode :: Node -> (Float,String)
+        evaluateNode (Node f w (Input label) _)  = (w * f i, "")
+            where
+                i = fst . head . filter ((==label) . snd) $ inputs
         evaluateNode (Node f w Default n)        = (sum (map (fst . evaluateNode) (lastLayer n)), "")
         evaluateNode (Node f w (Output label) n) = (sum (map (fst . evaluateNode) (lastLayer n)), label)
-        lastLayer :: NodeId -> [Node]
-        lastLayer n = map (\(x,_) -> head $ filter (checkId x) nodes) $ filter (\e -> snd e == n) edges
+        lastLayer n = map (getNode nodes . fst) $ filter ((==n) . snd) edges
 
 {-
 
@@ -131,8 +130,8 @@ mutateLinkA (Network nodes edges) (i1:(i2:(order:rs))) = (edges ++ edges',rs)
         n1 = getElementR nodes i1
         n2 = getElementR nodes i2
         edges' 
-         | n1 == n2 || (nType n1 == Input 0 && nType n2 == Input 0) || linkExists n1 n2 edges = []
-         | nType n1 == Input 0 || order < 0.5 = [(uid n1,uid n2)]
+         | n1 == n2 || (nType n1 == Input "" && nType n2 == Input "") || linkExists n1 n2 edges = []
+         | nType n1 == Input "" || order < 0.5 = [(uid n1,uid n2)]
          | otherwise = [(uid n2,uid n1)] -- we're gonna create a connection n1 -> n2
 
 mutateLinkD :: Network -> [Float] -> ([(NodeId,NodeId)],[Float])
@@ -142,6 +141,6 @@ mutateLinkD (Network nodes edges) (i:rs) = (if keep then edges else delete (n1,n
         node1 = getNode nodes n1
         node2 = getNode nodes n2
         -- don't want to remove the only thing coming from an input...
-        keep = ((nType node1 == Input 0) && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
+        keep = ((nType node1 == Input "") && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
         count1 = length . filter ((==n1) . fst) $ edges
         count2 = length . filter ((==n2) . snd) $ edges

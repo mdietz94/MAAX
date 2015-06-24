@@ -13,6 +13,9 @@ maintainer:          mdietz@wesleyan.edu
 -- category:            
 build-type:          Simple
 extra-source-files:  README.md
+category:            AI
+description:         Neural network to run NES games
+synopsis:            Neural network to run NES games
 cabal-version:       >=1.10
 
 executable MAAX
@@ -28,8 +31,10 @@ executable MAAX
   extra-lib-dirs:      ./tom7
   extra-libraries: emulator
   ghc-options:
-    -O2
     -threaded
     -fprof-auto
     "-with-rtsopts=-N -p -s -h -i0.1"
 
+source-repository head
+  type:                git
+  location:            https://github.com/mdietz94/MAAX.git
