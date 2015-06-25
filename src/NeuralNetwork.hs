@@ -3,6 +3,8 @@ module NeuralNetwork where
 import Emulator
 import System.Random
 import Data.List
+import Data.Map (Map)
+import qualified Data.Map as Map
 
 data NodeType = Input String | Default | Output String
 instance Eq NodeType where
@@ -19,13 +21,13 @@ data Node = Node { f :: Float -> Float
 
 type NodeId = Int
 
-instance Eq Node where
-    (Node _ _ _ x) == (Node _ _ _ y) = x == y
-
 instance Show Node where
     show (Node _ _ _ x) = "<Node: " ++ show x ++ ">"
 
-data Network = Network { nodes :: [Node], edges :: [(NodeId,NodeId)] }
+data Network = Network { nodes :: Map NodeId Node, edges :: [(NodeId,NodeId)] }
+
+fromNodeList :: [Node] -> Map NodeId Node
+fromNodeList = Map.fromList . map (\n -> (uid n, n))
 
 -- we will take as input some slices of RAM
 -- and we will output the keys to press.
@@ -46,14 +48,14 @@ runNetwork :: Network -> [(Float,String)] -> Joystick
 runNetwork (Network nodes edges) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
     where
         toButton name = (>0.5) . fst . head . filter ((==name) . snd) $ outs
-        outs = map (evaluateNode . getNode nodes . snd) . nub . filter ((== Output "") . nType . getNode nodes . snd) $ edges
+        outs = map (evaluateNode . (nodes Map.!) . snd) . nub . filter ((== Output "") . nType . (nodes Map.!) . snd) $ edges
         evaluateNode :: Node -> (Float,String)
         evaluateNode (Node f w (Input label) _)  = (w * f i, "")
             where
                 i = fst . head . filter ((==label) . snd) $ inputs
         evaluateNode (Node f w Default n)        = (sum (map (fst . evaluateNode) (lastLayer n)), "")
         evaluateNode (Node f w (Output label) n) = (sum (map (fst . evaluateNode) (lastLayer n)), label)
-        lastLayer n = map (getNode nodes . fst) $ filter ((==n) . snd) edges
+        lastLayer n = map ((nodes Map.!) . fst) $ filter ((==n) . snd) edges
 
 {-
 
@@ -85,7 +87,7 @@ breedChild :: Network -> Network -> [Float] -> (Network, [Float])
 breedChild n@(Network nodes edges) n'@(Network nodes' edges') (c:(r:rs)) = mutate newNet (drop (length nodes) rs)
     where
        newNet 
-         | c < 0.75 = foldl' (switchGenome n') n $ zip (map uid nodes) rs
+         | c < 0.75 = foldl' (switchGenome n') n $ zip (Map.keys nodes) rs
          | otherwise = Network nodes edges
 
 deleteLinks _ [] = []
@@ -95,10 +97,9 @@ deleteLinks nId ((x,y):xs)
 
 switchGenome (Network fromNodes fromEdges) (Network toNodes toEdges) (nId,r) = if r < 0.5 then Network toNodes toEdges else Network newNodes newEdges
     where
-        newNode   = getNode fromNodes nId
+        newNodes  = Map.insert nId (fromNodes Map.! nId) toNodes
         nodeEdges = filter (\(x,y) -> x == nId || y == nId) fromEdges
-        newNodes  = newNode : delete newNode toNodes
-        newEdges  = nodeEdges ++ deleteLinks nId toEdges
+        newEdges  = nodeEdges ++ deleteLinks nId toEdges -- is this the proper construction? cause we're going to delete some edges and alter other genes too... so order will matter...
 
 mutate :: Network -> [Float] -> (Network,[Float])
 mutate n@(Network nodes edges) (r:rs)
@@ -107,11 +108,11 @@ mutate n@(Network nodes edges) (r:rs)
   | r < 0.4 = let (nodes',rs') = mutateWeight nodes rs in mutate (Network nodes' edges) rs'
   | otherwise = (Network nodes edges,rs)
 
-mutateWeight :: [Node] -> [Float] -> ([Node],[Float])
-mutateWeight nodes (c:(p':(i:rs))) = (n : delete n nodes, rs)
+mutateWeight :: Map Int Node -> [Float] -> (Map Int Node,[Float])
+mutateWeight nodes (c:(p':(i:rs))) = (Map.insert (uid n) n nodes, rs)
     where
         p = p' * 4.0 - 2.0 -- [-2.0,2.0)
-        n = getElementR nodes i
+        n = getElementR (Map.elems nodes) i
         w' = if c < 0.9
               then
                 weight n + smallScale * p
@@ -127,10 +128,10 @@ linkExists x y ((x1,y1):xs) = uid x == x1 && uid y == y1 || uid y == x1 && uid x
 mutateLinkA :: Network -> [Float] -> ([(NodeId,NodeId)],[Float])
 mutateLinkA (Network nodes edges) (i1:(i2:(order:rs))) = (edges ++ edges',rs)
     where
-        n1 = getElementR nodes i1
-        n2 = getElementR nodes i2
+        n1 = getElementR (Map.elems nodes) i1
+        n2 = getElementR (Map.elems nodes) i2
         edges' 
-         | n1 == n2 || (nType n1 == Input "" && nType n2 == Input "") || linkExists n1 n2 edges = []
+         | uid n1 == uid n2 || (nType n1 == Input "" && nType n2 == Input "") || linkExists n1 n2 edges = []
          | nType n1 == Input "" || order < 0.5 = [(uid n1,uid n2)]
          | otherwise = [(uid n2,uid n1)] -- we're gonna create a connection n1 -> n2
 
@@ -138,9 +139,12 @@ mutateLinkD :: Network -> [Float] -> ([(NodeId,NodeId)],[Float])
 mutateLinkD (Network nodes edges) (i:rs) = (if keep then edges else delete (n1,n2) edges,rs)
     where
         (n1,n2) = getElementR edges i
-        node1 = getNode nodes n1
-        node2 = getNode nodes n2
+        node1 = nodes Map.! n1
+        node2 = nodes Map.! n2
         -- don't want to remove the only thing coming from an input...
         keep = ((nType node1 == Input "") && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
         count1 = length . filter ((==n1) . fst) $ edges
         count2 = length . filter ((==n2) . snd) $ edges
+
+sigmoid :: Float -> Float
+sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
