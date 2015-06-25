@@ -10,21 +10,19 @@ import Data.Maybe
 import Control.Lens
 import qualified Data.Map as Map
 
-data Node = Input Int String | Hidden Int | Output Int String
+numInputs = 8
+numOutputs = 6
 
-isInput (Input _ _) = True
-isInput _ = False
+isInput = (<numInputs)
+isOutput n = not (isInput n) && n < numInputs+numOutputs
+isHidden n = not (isInput n) && not (isOutput n)
 
-isOutput (Output _ _) = True
-isOutput _ = False
+-- we need to check for loops here...
+-- other than that this seems to be coming along real nicely
 
-isHidden (Hidden _) = True
-isHidden _ = False
-
-getId (Input i _) = i
-getId (Hidden i) = i
-getId (Output i _) = i
-
+--- so slight mistake is that the nodes are actually genome independent... methinks...
+-- or we don't actually need to store them, since they don't actually store info. other than
+-- hidden/output/input
 data Gene = Gene { _input      :: Int
                  , _output     :: Int
                  , _weight     :: Float
@@ -32,128 +30,76 @@ data Gene = Gene { _input      :: Int
                  , _innovation :: Int } deriving (Eq)
 makeClassy ''Gene
 
-data Genome = Genome { _nodes :: [Node]
+data Genome = Genome { _numnodes :: Int
                      , _genes :: [Gene] }
 makeClassy ''Genome
 
-evaluateGenome :: Genome -> [(String,Float)] -> Joystick
-evaluateGenome (Genome nodes genes) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
+-- greater than 0.5 and we press the button
+-- output neurons must be in same order as
+-- fromListJ expects
+-- though obviously its random start so this
+-- will always evolve to work
+evaluateGenome :: Genome -> [Float] -> Joystick
+evaluateGenome (Genome maxNode genes) inputs = fromListJ (map (>0.5) outs)
     where
-        toButton name = (>0.5) . fst . head . filter ((==name) . snd) $ outs
-        outs = mapMaybe evaluateOutput nodes
-        evaluateOutput x@(Output _ l) = Just (evaluateNode x, l)
-        evaluateOutput _ = Nothing
-        evaluateNode :: Node -> Float
-        evaluateNode (Input _ l) = fromJust . lookup l $ inputs
-        evaluateNode n = sum . map evaluateGene . filter isMyGene $ genes
+        outs = map evaluateNode [numInputs..numInputs+numOutputs]
+        evaluateNode :: Int -> Float
+        evaluateNode n
+          | isInput n = inputs !! n
+          | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
             where
                 evaluateGene :: Gene -> Float
-                evaluateGene g = g^.weight * sigmoid (evaluateNode (fromJust $ find ((==g^.input) . getId) nodes))
+                evaluateGene g = g^.weight * evaluateNode (g^.input)
                 isMyGene :: Gene -> Bool
-                isMyGene g = g^.enabled && g^.output == getId n
--- could use a STATE monad to auto-keep the global innovation up...
+                isMyGene g = g^.enabled && g^.output == n
+
 addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addNode gInnov (Genome nodes genes) (r:rs) = (gInnov+2,Genome nodes' genes', rs)
+addNode gInnov (Genome numnodes genes) (r:rs) = (gInnov+2,Genome (numnodes+1) genes', rs)
     where
-        rGene = getElementR genes r
-        newNodeId = maximum . map getId $ nodes
-        nodes' = Hidden newNodeId : nodes
-        newGene1 = set innovation gInnov . set output newNodeId $ rGene
-        newGene2 = set innovation (gInnov+1) . set weight  1.0 .  set input newNodeId $ rGene
+        rGene = getElementR (filter (^.enabled) genes) r
+        newGene1 = set innovation gInnov . set output numnodes $ rGene
+        newGene2 = set innovation (gInnov+1) . set weight  1.0 .  set input numnodes $ rGene
         genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
 
 addLink :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
 addLink gInnov (Genome nodes genes) (r:(r1:rs)) = (gInnov+1,Genome nodes (newGene : genes), rs)
     where
-        allPairs = [ (getId x,getId y) | x <- nodes, y <- nodes ]
+        allPairs = [ (x,y) | x <- [0..nodes], y <- [0..nodes] ]
         gPairs = map (\g -> (g^.input,g^.output)) genes
         disjointPairs = allPairs \\ gPairs
         (inp,out) = getElementR disjointPairs r
         newGene = Gene inp out (r1 * 4.0 - 2.0) True gInnov
 
+uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
+uncurry3 f (a,b,c) = f a b c
 
-{-
+-- should mess with these rates of mutation...
+mutate :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
+mutate gInnov genome (r:rs)
+  | r < 0.2 = uncurry3 mutate $ addLink gInnov genome rs
+  | r < 0.5 = uncurry3 mutate $ addNode gInnov genome rs
+  | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
+    where
+        perturbWeights :: Genome -> [Float] -> Genome
+        perturbWeights genome rs = genes %~ map (uncurry perturb) . zip rs $ genome
+        perturb :: Float -> Gene -> Gene
+        perturb r = weight +~ r * scale - scale / 2.0
+            where
+                scale = if floor (r * 100.0) `mod` 10 > 0 then 0.2 else 2.0
+
 -- 90% chance to make a small change
 -- 10% chance to reset completely
 smallScale = 0.2
 largeScale = 2.0
-crossOverChance = 0.75
 
--- this presupposes that the fitness of network1 is greater than that of network2
--- since if we don't crossover we just mutate the first
+-- genome1 MUST be fitter than genome2!
 crossover :: Genome -> Genome -> [Float] -> (Genome, [Float])
-crossover n@(Genome nodes genes) n'@(Genome nodes' genes') (c:(r:rs)) = mutate newNet (drop (length nodes) rs)
+crossover genome1 genome2 rs = (genes .~ genes2 ++ genes1 $ genome1, drop (genome2^.genes.to length) rs)
     where
-       newNet 
-         | c < 0.75 = foldl' (switchGenome n') n $ zip (Map.keys nodes) rs
-         | otherwise = Network nodes edges
+        innovationNums = map (^.innovation) $ genome1^.genes
+        genes2 = map snd . filter (\(r,g)->  r < 0.5 && g^.innovation `elem` innovationNums) . zip rs $ genome2^.genes
+        genes1 = deleteFirstsBy (\a b -> a^.innovation == b^.innovation) (genome1^.genes) genes2
 
-deleteLinks _ [] = []
-deleteLinks nId ((x,y):xs)
-  | x == nId || y == nId = deleteLinks nId xs
-  | otherwise      =  (x,y) : deleteLinks nId xs
-
-switchGenome (Network fromNodes fromEdges) (Network toNodes toEdges) (nId,r) = if r < 0.5 then Network toNodes toEdges else Network newNodes newEdges
-    where
-        newNodes  = Map.insert nId (fromNodes Map.! nId) toNodes
-        nodeEdges = filter (\(x,y) -> x == nId || y == nId) fromEdges
-        -- we might just want to add the new edges...
-        -- since otherwise we are modifying other genes??
-        -- in the original each only had 1 input / output
-        -- i guess meaning each gene was a node
-        -- tied together with two edges, with the node
-        -- as the fst of one and the snd of the other
-        -- which we might want to replicate......
-        -- i mean it really depends on the difference between edges??
-        --
-        -- cause in the current construction we could be deleting things we shouldn't
-        -- and if we just add links we might just be adding links each generation without a way to delete
-        -- maybe edges should also keep track of which node "owns" the edge?
-        newEdges  = nodeEdges ++ deleteLinks nId toEdges -- is this the proper construction? cause we're going to delete some edges and alter other genes too... so order will matter...
-
-mutate :: Network -> [Float] -> (Network,[Float])
-mutate n@(Network nodes edges) (r:rs)
-  | r < 0.1 = let (edges',rs') = mutateLinkA n rs in mutate (Network nodes edges') rs'
-  | r < 0.2 = let (edges',rs') = mutateLinkD n rs in mutate (Network nodes edges') rs'
-  | r < 0.4 = let (nodes',rs') = mutateWeight nodes rs in mutate (Network nodes' edges) rs'
-  | otherwise = (Network nodes edges,rs)
-
-mutateWeight :: Map Int Node -> [Float] -> (Map Int Node,[Float])
-mutateWeight nodes (c:(p':(i:rs))) = (Map.insert (uid n) n nodes, rs)
-    where
-        p = p' * 4.0 - 2.0 -- [-2.0,2.0)
-        n = getElementR (Map.elems nodes) i
-        w' = if c < 0.9
-              then
-                weight n + smallScale * p
-              else
-                largeScale * p
-
-
-linkExists _ _ [] = False
-linkExists x y ((x1,y1):xs) = uid x == x1 && uid y == y1 || uid y == x1 && uid x == y1 || linkExists x y xs
-
-mutateLinkA :: Network -> [Float] -> ([(NodeId,NodeId)],[Float])
-mutateLinkA (Network nodes edges) (i1:(i2:(order:rs))) = (edges ++ edges',rs)
-    where
-        n1 = getElementR (Map.elems nodes) i1
-        n2 = getElementR (Map.elems nodes) i2
-        edges' 
-         | uid n1 == uid n2 || (nType n1 == Input "" && nType n2 == Input "") || linkExists n1 n2 edges = []
-         | nType n1 == Input "" || order < 0.5 = [(uid n1,uid n2)]
-         | otherwise = [(uid n2,uid n1)] -- we're gonna create a connection n1 -> n2
-
-mutateLinkD :: Network -> [Float] -> ([(NodeId,NodeId)],[Float])
-mutateLinkD (Network nodes edges) (i:rs) = (if keep then edges else delete (n1,n2) edges,rs)
-    where
-        (n1,n2) = getElementR edges i
-        node1 = nodes Map.! n1
-        node2 = nodes Map.! n2
-        -- don't want to remove the only thing coming from an input...
-        keep = ((nType node1 == Input "") && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
-        count1 = length . filter ((==n1) . fst) $ edges
-        count2 = length . filter ((==n2) . snd) $ edges
--}
 sigmoid :: Float -> Float
 sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 
