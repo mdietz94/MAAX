@@ -41,9 +41,6 @@ fromNodeList = Map.fromList . map (\n -> (uid n, n))
 -- wall may require moving left, which is a rare move, and might
 -- only be noticeable if we think we are 'stuck' but we can probably
 
-getNode :: [Node] -> NodeId -> Node
-getNode ns nId = head $ filter ((==nId) . uid) ns
-
 runNetwork :: Network -> [(Float,String)] -> Joystick
 runNetwork (Network nodes edges) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
     where
@@ -99,6 +96,18 @@ switchGenome (Network fromNodes fromEdges) (Network toNodes toEdges) (nId,r) = i
     where
         newNodes  = Map.insert nId (fromNodes Map.! nId) toNodes
         nodeEdges = filter (\(x,y) -> x == nId || y == nId) fromEdges
+        -- we might just want to add the new edges...
+        -- since otherwise we are modifying other genes??
+        -- in the original each only had 1 input / output
+        -- i guess meaning each gene was a node
+        -- tied together with two edges, with the node
+        -- as the fst of one and the snd of the other
+        -- which we might want to replicate......
+        -- i mean it really depends on the difference between edges??
+        --
+        -- cause in the current construction we could be deleting things we shouldn't
+        -- and if we just add links we might just be adding links each generation without a way to delete
+        -- maybe edges should also keep track of which node "owns" the edge?
         newEdges  = nodeEdges ++ deleteLinks nId toEdges -- is this the proper construction? cause we're going to delete some edges and alter other genes too... so order will matter...
 
 mutate :: Network -> [Float] -> (Network,[Float])
