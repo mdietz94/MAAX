@@ -1,77 +1,78 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module NeuralNetwork where
 
 import Emulator
 import System.Random
 import Data.List
 import Data.Map (Map)
+import Data.Maybe
+import Control.Lens
 import qualified Data.Map as Map
 
-data NodeType = Input String | Default | Output String
-instance Eq NodeType where
-   (Input _) == (Input _) = True
-   Default == Default = True
-   (Output _) == (Output _) = True
-   _ == _ = False
+data Node = Input Int String | Hidden Int | Output Int String
 
+isInput (Input _ _) = True
+isInput _ = False
 
-data Node = Node { f :: Float -> Float
-                 , weight :: Float
-                 , nType :: NodeType
-                 , uid :: NodeId }
+isOutput (Output _ _) = True
+isOutput _ = False
 
-type NodeId = Int
+isHidden (Hidden _) = True
+isHidden _ = False
 
-instance Show Node where
-    show (Node _ _ _ x) = "<Node: " ++ show x ++ ">"
+getId (Input i _) = i
+getId (Hidden i) = i
+getId (Output i _) = i
 
-data Network = Network { nodes :: Map NodeId Node, edges :: [(NodeId,NodeId)] }
+data Gene = Gene { _input      :: Int
+                 , _output     :: Int
+                 , _weight     :: Float
+                 , _enabled    :: Bool
+                 , _innovation :: Int } deriving (Eq)
+makeClassy ''Gene
 
-fromNodeList :: [Node] -> Map NodeId Node
-fromNodeList = Map.fromList . map (\n -> (uid n, n))
+data Genome = Genome { _nodes :: [Node]
+                     , _genes :: [Gene] }
+makeClassy ''Genome
 
--- we will take as input some slices of RAM
--- and we will output the keys to press.
-
--- we should probably also take a few other things
--- like some info about our past moves, for instance
--- in order to avoid getting stuck at local maxima
-
--- or maybe that's worth just using time travel to get
--- around.  For instance moving right if we're stuck against a
--- wall may require moving left, which is a rare move, and might
--- only be noticeable if we think we are 'stuck' but we can probably
-
-runNetwork :: Network -> [(Float,String)] -> Joystick
-runNetwork (Network nodes edges) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
+evaluateGenome :: Genome -> [(String,Float)] -> Joystick
+evaluateGenome (Genome nodes genes) inputs = fromListJ $ map toButton ["left","right","up","down","b","a"]
     where
         toButton name = (>0.5) . fst . head . filter ((==name) . snd) $ outs
-        outs = map (evaluateNode . (nodes Map.!) . snd) . nub . filter ((== Output "") . nType . (nodes Map.!) . snd) $ edges
-        evaluateNode :: Node -> (Float,String)
-        evaluateNode (Node f w (Input label) _)  = (w * f i, "")
+        outs = mapMaybe evaluateOutput nodes
+        evaluateOutput x@(Output _ l) = Just (evaluateNode x, l)
+        evaluateOutput _ = Nothing
+        evaluateNode :: Node -> Float
+        evaluateNode (Input _ l) = fromJust . lookup l $ inputs
+        evaluateNode n = sum . map evaluateGene . filter isMyGene $ genes
             where
-                i = fst . head . filter ((==label) . snd) $ inputs
-        evaluateNode (Node f w Default n)        = (sum (map (fst . evaluateNode) (lastLayer n)), "")
-        evaluateNode (Node f w (Output label) n) = (sum (map (fst . evaluateNode) (lastLayer n)), label)
-        lastLayer n = map ((nodes Map.!) . fst) $ filter ((==n) . snd) edges
+                evaluateGene :: Gene -> Float
+                evaluateGene g = g^.weight * sigmoid (evaluateNode (fromJust $ find ((==g^.input) . getId) nodes))
+                isMyGene :: Gene -> Bool
+                isMyGene g = g^.enabled && g^.output == getId n
+-- could use a STATE monad to auto-keep the global innovation up...
+addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
+addNode gInnov (Genome nodes genes) (r:rs) = (gInnov+2,Genome nodes' genes', rs)
+    where
+        rGene = getElementR genes r
+        newNodeId = maximum . map getId $ nodes
+        nodes' = Hidden newNodeId : nodes
+        newGene1 = set innovation gInnov . set output newNodeId $ rGene
+        newGene2 = set innovation (gInnov+1) . set weight  1.0 .  set input newNodeId $ rGene
+        genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
+
+addLink :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
+addLink gInnov (Genome nodes genes) (r:(r1:rs)) = (gInnov+1,Genome nodes (newGene : genes), rs)
+    where
+        allPairs = [ (getId x,getId y) | x <- nodes, y <- nodes ]
+        gPairs = map (\g -> (g^.input,g^.output)) genes
+        disjointPairs = allPairs \\ gPairs
+        (inp,out) = getElementR disjointPairs r
+        newGene = Gene inp out (r1 * 4.0 - 2.0) True gInnov
+
 
 {-
-
-Basically what we want to do is create some randos
-and then score based on 'x' position + 'next world' (hahah that would be nice)
-+ score - time + lives and that will be score.  We will take the best ones,
-and merge them.
-
-Simply put, we can create a variety of different formats, try them all, merge weights of best same format.
-All of them will have the same number of inputs and outputs, so it will be the number / links on the 2 hidden layers. (at start we should avoid from back-linking?)
-Then when we merge them, we take the better one, and keep all its shit, then we take the 2nd one, and where it has ones with the same id, 50% chance to replace
-
-We also mutate at each generation, we can do a few things
-    a) change weight
-    b) take 2 random nodes and create a link as long as (both aren't input) and this doesn't create a loop
-    c) turn a node into 2 new nodes
-    d) merge 2 nodes ... low chance ...
--}
-
 -- 90% chance to make a small change
 -- 10% chance to reset completely
 smallScale = 0.2
@@ -80,8 +81,8 @@ crossOverChance = 0.75
 
 -- this presupposes that the fitness of network1 is greater than that of network2
 -- since if we don't crossover we just mutate the first
-breedChild :: Network -> Network -> [Float] -> (Network, [Float])
-breedChild n@(Network nodes edges) n'@(Network nodes' edges') (c:(r:rs)) = mutate newNet (drop (length nodes) rs)
+crossover :: Genome -> Genome -> [Float] -> (Genome, [Float])
+crossover n@(Genome nodes genes) n'@(Genome nodes' genes') (c:(r:rs)) = mutate newNet (drop (length nodes) rs)
     where
        newNet 
          | c < 0.75 = foldl' (switchGenome n') n $ zip (Map.keys nodes) rs
@@ -128,8 +129,6 @@ mutateWeight nodes (c:(p':(i:rs))) = (Map.insert (uid n) n nodes, rs)
               else
                 largeScale * p
 
-getElementR :: [a] -> Float -> a
-getElementR xs r = xs !! floor ( r * fromIntegral (length xs))
 
 linkExists _ _ [] = False
 linkExists x y ((x1,y1):xs) = uid x == x1 && uid y == y1 || uid y == x1 && uid x == y1 || linkExists x y xs
@@ -154,6 +153,9 @@ mutateLinkD (Network nodes edges) (i:rs) = (if keep then edges else delete (n1,n
         keep = ((nType node1 == Input "") && count1 == 1) || ((nType node2 == Output "") && count2 == 1)
         count1 = length . filter ((==n1) . fst) $ edges
         count2 = length . filter ((==n2) . snd) $ edges
-
+-}
 sigmoid :: Float -> Float
 sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
+
+getElementR :: [a] -> Float -> a
+getElementR xs r = xs !! floor ( r * fromIntegral (length xs))
