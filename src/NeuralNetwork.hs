@@ -20,10 +20,16 @@ isInput = (<numInputs)
 isOutput n = not (isInput n) && n < numInputs+numOutputs
 isHidden n = not (isInput n) && not (isOutput n)
 
+maxStagnation = 15 --generations a genome is allowed to survive without improving fitness
+
 -- TODO:
 -- if a species does not improve fitness after 15 generations
 -- we need to eliminate it
---
+--    todo this we keep track of a counter with each genome
+--    if fitness improves we reset counter of genome to 0
+--    otherwise we increment the counter
+--    when we cull the population, we check if the counter exceeds
+--    the maxStagnation limit, if so we cull the genome
 -- The best genome of each species with at least 5 genomes
 -- should be copied to the next generation unmodified
 --
@@ -80,14 +86,16 @@ breedChild gs (r:(r1:(r2:rs)))
   | otherwise = (getElementR gs r1, r2:rs)
 
 -- cullSpecies takes the number to keep per species
--- along with the population paired with each genome's fitness
+-- along with the population (a list of each genome tupled with
+-- its fitness and its fitness x generations ago
 -- so this should be called after each generation is done
 -- running
-cullSpecies :: Int -> [(Genome,Float)] -> [(Genome,Float)]
+cullSpecies :: Int -> [(Genome,Float,Int)] -> [(Genome,Float,Int)]
 cullSpecies numberToLeave population = concatMap (take numberToLeave) speciesSorted
     where
+        population' = filter (\(_,_,i) -> i >= max_stagnation) population
         species :: [[(Genome,Float)]]
-        species = groupBy (\(a,_) (b,_) -> geneticDifference a b < speciationThreshold) population
+        species = groupBy (\(a,_,_) (b,_,_) -> geneticDifference a b < speciationThreshold) population'
         speciesSorted :: [[(Genome,Float)]]
         speciesSorted = map (sortBy (\(_,a) (_,b) -> compare a b)) species
 
