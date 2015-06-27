@@ -5,10 +5,8 @@ module NeuralNetwork where
 import Emulator
 import System.Random
 import Data.List
-import Data.Map (Map)
 import Data.Maybe
 import Control.Lens
-import qualified Data.Map as Map
 import Control.Arrow ((&&&))
 
 populationSize = 200
