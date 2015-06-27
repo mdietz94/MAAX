@@ -23,11 +23,11 @@ maxStagnation = 15 --generations a genome is allowed to survive without improvin
 -- TODO:
 -- if a species does not improve fitness after 15 generations
 -- we need to eliminate it
---    todo this we keep track of a counter with each genome
---    if fitness improves we reset counter of genome to 0
+--    todo this we keep track of a counter with each species
+--    if fitness improves we reset counter of species to 0
 --    otherwise we increment the counter
 --    when we cull the population, we check if the counter exceeds
---    the maxStagnation limit, if so we cull the genome
+--    the maxStagnation limit, if so we cull the species
 -- The best genome of each species with at least 5 genomes
 -- should be copied to the next generation unmodified
 --
@@ -50,8 +50,7 @@ makeClassy ''Gene
 
 data Genome = Genome { _numnodes :: Int
                      , _genes :: [Gene]
-                     , _fitness :: Float
-                     , _stagnation :: Int }
+                     }
 makeClassy ''Genome
 
 type Population = [Genome]
@@ -103,21 +102,20 @@ breedChild gs (r:(r1:(r2:rs)))
 -- its fitness and its fitness x generations ago
 -- so this should be called after each generation is done
 -- running
-cullSpecies :: Int -> [Genome] -> [Genome]
+cullSpecies :: Int -> [(Genome,Float)] -> [(Genome,Float)]
 cullSpecies numberToLeave population = concatMap (take numberToLeave) speciesSorted
     where
-        population' = filter (\g -> g^.stagnation >= maxStagnation) population
-        species :: [[Genome]]
-        species = groupBy (\a b -> geneticDifference a b < speciationThreshold) population'
-        speciesSorted :: [[Genome]]
-        speciesSorted = map (sortBy (\a b -> compare (a^.fitness) (b^.fitness))) species
+        species :: [[(Genome,Float)]]
+        species = groupBy (\(a,_) (b,_) -> geneticDifference a b < speciationThreshold) population
+        speciesSorted :: [[(Genome,Float)]]
+        speciesSorted = map (sortBy (\(_,a) (_,b) -> compare a b)) species
 
 -- the sum of the adjustedFitness
 -- of a species determines
 -- the number of offspring they will
 -- have in the next generation
-adjustedFitness :: Genome -> Population -> Float
-adjustedFitness genome population = genome^.fitness / modifier
+adjustedFitness :: Genome -> Float -> Population -> Float
+adjustedFitness genome fitness population = fitness / modifier
     where
         modifier = sum $ map (sharing . geneticDifference genome) population
         sharing x = if x < speciationThreshold then 1.0 else 0.0
@@ -129,7 +127,7 @@ adjustedFitness genome population = genome^.fitness / modifier
 -- will always evolve to work
 maxLinkLength = 40 -- the max number to backjump, so we don't get stuck in loops
 evaluateGenome :: Genome -> [Float] -> Joystick
-evaluateGenome (Genome maxNode genes _ _) inputs = fromListJ (map (>0.5) outs)
+evaluateGenome (Genome maxNode genes) inputs = fromListJ (map (>0.5) outs)
     where
         outs = map (evaluateNode maxLinkLength) [numInputs..numInputs+numOutputs]
         evaluateNode :: Int -> Int -> Float
@@ -144,7 +142,7 @@ evaluateGenome (Genome maxNode genes _ _) inputs = fromListJ (map (>0.5) outs)
                 isMyGene g = g^.enabled && g^.output == n
 
 addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addNode gInnov (Genome numnodes genes _ _) (r:rs) = (gInnov+2,Genome (numnodes+1) genes' (error "fitness") 0, rs)
+addNode gInnov (Genome numnodes genes) (r:rs) = (gInnov+2,Genome (numnodes+1) genes', rs)
     where
         rGene = getElementR (filter (^.enabled) genes) r
         newGene1 = set innovation gInnov . set output numnodes $ rGene
@@ -152,7 +150,7 @@ addNode gInnov (Genome numnodes genes _ _) (r:rs) = (gInnov+2,Genome (numnodes+1
         genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
 
 addLink :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addLink gInnov (Genome nodes genes _ _) (r:(r1:rs)) = (gInnov+1,Genome nodes (newGene : genes) (error "fitness") 0, rs)
+addLink gInnov (Genome nodes genes) (r:(r1:rs)) = (gInnov+1,Genome nodes (newGene : genes), rs)
     where
         allPairs = [ (x,y) | x <- [0..nodes], y <- [0..nodes] ]
         gPairs = map (\g -> (g^.input,g^.output)) genes
@@ -161,13 +159,13 @@ addLink gInnov (Genome nodes genes _ _) (r:(r1:rs)) = (gInnov+1,Genome nodes (ne
         newGene = Gene inp out (r1 * 4.0 - 2.0) True gInnov
 
 disableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-disableGene gInnov (Genome nodes genes fitness stagnation) (r:rs) = (gInnov, Genome nodes genes' fitness stagnation, rs)
+disableGene gInnov (Genome nodes genes) (r:rs) = (gInnov, Genome nodes genes', rs)
     where
         rGene = getElementR (filter (^.enabled) genes) r
         genes' = (enabled .~ False $ rGene) : delete rGene genes
 
 enableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-enableGene gInnov (Genome nodes genes fitness stagnation) (r:rs) = (gInnov, Genome nodes genes' fitness stagnation, rs)
+enableGene gInnov (Genome nodes genes) (r:rs) = (gInnov, Genome nodes genes', rs)
     where
         rGene = getElementR (filter (not . (^.enabled)) genes) r
         genes' = (enabled .~ True $ rGene) : delete rGene genes
