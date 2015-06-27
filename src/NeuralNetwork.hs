@@ -93,11 +93,11 @@ breedChild gs (r:(r1:(r2:rs)))
 cullSpecies :: Int -> [(Genome,Float,Int)] -> [(Genome,Float,Int)]
 cullSpecies numberToLeave population = concatMap (take numberToLeave) speciesSorted
     where
-        population' = filter (\(_,_,i) -> i >= max_stagnation) population
-        species :: [[(Genome,Float)]]
+        population' = filter (\(_,_,i) -> i >= maxStagnation) population
+        species :: [[(Genome,Float,Int)]]
         species = groupBy (\(a,_,_) (b,_,_) -> geneticDifference a b < speciationThreshold) population'
-        speciesSorted :: [[(Genome,Float)]]
-        speciesSorted = map (sortBy (\(_,a) (_,b) -> compare a b)) species
+        speciesSorted :: [[(Genome,Float,Int)]]
+        speciesSorted = map (sortBy (\(_,a,_) (_,b,_) -> compare a b)) species
 
 -- the sum of the adjustedFitness
 -- of a species determines
