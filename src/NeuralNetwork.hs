@@ -5,10 +5,8 @@ module NeuralNetwork where
 import Emulator
 import System.Random
 import Data.List
-import Data.Map (Map)
 import Data.Maybe
 import Control.Lens
-import qualified Data.Map as Map
 import Control.Arrow ((&&&))
 
 populationSize = 200
@@ -20,10 +18,16 @@ isInput = (<numInputs)
 isOutput n = not (isInput n) && n < numInputs+numOutputs
 isHidden n = not (isInput n) && not (isOutput n)
 
+maxStagnation = 15 --generations a genome is allowed to survive without improving fitness
+
 -- TODO:
 -- if a species does not improve fitness after 15 generations
 -- we need to eliminate it
---
+--    todo this we keep track of a counter with each species
+--    if fitness improves we reset counter of species to 0
+--    otherwise we increment the counter
+--    when we cull the population, we check if the counter exceeds
+--    the maxStagnation limit, if so we cull the species
 -- The best genome of each species with at least 5 genomes
 -- should be copied to the next generation unmodified
 --
@@ -45,7 +49,8 @@ data Gene = Gene { _input      :: Int
 makeClassy ''Gene
 
 data Genome = Genome { _numnodes :: Int
-                     , _genes :: [Gene] }
+                     , _genes :: [Gene]
+                     }
 makeClassy ''Genome
 
 type Population = [Genome]
@@ -55,15 +60,28 @@ getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome
 speciationThreshold = 3.0 :: Float -- this was 4.0 for DPLV (HARD Problem)
 
 weightedVsTopology = 0.4 -- this was 3.0 for DPLV (HARD problem)
+
+-- is this done right ? the formula from the paper is
+-- delta = c1*E/N + c2*D/N + c3*W_bar 
+-- where E is number of excess genes, D is number of disjoint genes,
+-- N is number of genes in larger genome, and W_bar is the average weight
+-- differences of matching genes
+-- previously  if
+--      g1 = [1,2,3,4,5,8]
+--      g2 = [1,2,3,4,5,6,7,9,10]
+--      then g1 \\ g2 --> [8]
+--      but we want disjoint + excess to be [6,7,8,9,10]
+--      so union \\ intersection does the job, could probably be made more
+--      effiecient
 geneticDifference :: Genome -> Genome -> Float
-geneticDifference g1 g2 = excess / num + weightedVsTopology * (diff / fromIntegral (length genesBoth))
+geneticDifference g1 g2 = excess_disjoint / num + weightedVsTopology * (diff / fromIntegral (length genesBoth))
     where
-        excess = fromIntegral . length $ genes1Inn \\ genes2Inn
+        excess_disjoint = fromIntegral . length $ (union genes1Inn genes2Inn) \\ (intersect genes1Inn genes2Inn)
         genes1Inn = map (^.innovation) . filter (^.enabled) $ g1^.genes
         genes2Inn = map (^.innovation) . filter (^.enabled) $ g2^.genes
         genesBoth = map (getInnovation g1 &&& getInnovation g2) $ intersect genes1Inn genes2Inn
         diff = sum $ map (\(a,b) -> abs $ a^.weight - b^.weight) genesBoth
-        num = fromIntegral $ maximum [g1^.genes.to length, g2^.genes.to length]
+        num = fromIntegral $ max (g1^.genes.to length) (g2^.genes.to length)
 
 breedSpecies :: Int -> [Genome] -> [Float] -> ([Genome],[Float])
 breedSpecies 0 species rs = ([],rs)
@@ -80,7 +98,8 @@ breedChild gs (r:(r1:(r2:rs)))
   | otherwise = (getElementR gs r1, r2:rs)
 
 -- cullSpecies takes the number to keep per species
--- along with the population paired with each genome's fitness
+-- along with the population (a list of each genome tupled with
+-- its fitness and its fitness x generations ago
 -- so this should be called after each generation is done
 -- running
 cullSpecies :: Int -> [(Genome,Float)] -> [(Genome,Float)]
@@ -95,8 +114,8 @@ cullSpecies numberToLeave population = concatMap (take numberToLeave) speciesSor
 -- of a species determines
 -- the number of offspring they will
 -- have in the next generation
-adjustedFitness :: Float -> Genome -> Population -> Float
-adjustedFitness fitness genome population = fitness / modifier
+adjustedFitness :: Genome -> Float -> Population -> Float
+adjustedFitness genome fitness population = fitness / modifier
     where
         modifier = sum $ map (sharing . geneticDifference genome) population
         sharing x = if x < speciationThreshold then 1.0 else 0.0
