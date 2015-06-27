@@ -67,18 +67,22 @@ weightedVsTopology = 0.4 -- this was 3.0 for DPLV (HARD problem)
 -- where E is number of excess genes, D is number of disjoint genes,
 -- N is number of genes in larger genome, and W_bar is the average weight
 -- differences of matching genes
--- it looks to me the only part that is missing is
--- + disjoint / num + 
--- where disjoint = fromIntegral . length $ 
+-- previously  if
+--      g1 = [1,2,3,4,5,8]
+--      g2 = [1,2,3,4,5,6,7,9,10]
+--      then g1 \\ g2 --> [8]
+--      but we want disjoint + excess to be [6,7,8,9,10]
+--      so union \\ intersection does the job, could probably be made more
+--      effiecient
 geneticDifference :: Genome -> Genome -> Float
-geneticDifference g1 g2 = excess / num + weightedVsTopology * (diff / fromIntegral (length genesBoth))
+geneticDifference g1 g2 = excess_disjoint / num + weightedVsTopology * (diff / fromIntegral (length genesBoth))
     where
-        excess = fromIntegral . length $ genes1Inn \\ genes2Inn
+        excess_disjoint = fromIntegral . length $ (union genes1Inn genes2Inn) \\ (intersect genes1Inn genes2Inn)
         genes1Inn = map (^.innovation) . filter (^.enabled) $ g1^.genes
         genes2Inn = map (^.innovation) . filter (^.enabled) $ g2^.genes
         genesBoth = map (getInnovation g1 &&& getInnovation g2) $ intersect genes1Inn genes2Inn
         diff = sum $ map (\(a,b) -> abs $ a^.weight - b^.weight) genesBoth
-        num = fromIntegral $ maximum [g1^.genes.to length, g2^.genes.to length]
+        num = fromIntegral $ max (g1^.genes.to length) (g2^.genes.to length)
 
 breedSpecies :: Int -> [Genome] -> [Float] -> ([Genome],[Float])
 breedSpecies 0 species rs = ([],rs)
