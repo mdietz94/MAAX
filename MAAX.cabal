@@ -26,6 +26,7 @@ executable MAAX
                      , bitwise >=0.1 && <0.2
                      , bytestring
                      , random
+                     , random-shuffle
                      , containers
                      , lens
   hs-source-dirs:      src

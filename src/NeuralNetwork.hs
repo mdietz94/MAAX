@@ -4,6 +4,7 @@ module NeuralNetwork where
 
 import Emulator
 import System.Random
+import System.Random.Shuffle
 import Data.List
 import Data.Maybe
 import Control.Lens
@@ -23,11 +24,6 @@ maxStagnation = 15 --generations a genome is allowed to survive without improvin
 -- TODO:
 -- if a species does not improve fitness after 15 generations
 -- we need to eliminate it
---    todo this we keep track of a counter with each species
---    if fitness improves we reset counter of species to 0
---    otherwise we increment the counter
---    when we cull the population, we check if the counter exceeds
---    the maxStagnation limit, if so we cull the species
 -- The best genome of each species with at least 5 genomes
 -- should be copied to the next generation unmodified
 --
@@ -53,13 +49,77 @@ data Genome = Genome { _numnodes :: Int
                      }
 makeClassy ''Genome
 
-type Population = [Genome]
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
 
 speciationThreshold = 3.0 :: Float -- this was 4.0 for DPLV (HARD Problem)
 
 weightedVsTopology = 0.4 -- this was 3.0 for DPLV (HARD problem)
+
+speciesMaxSize = 100 :: Int
+
+type Population = [Species]
+type Species = (Int                 --stagnation
+               ,Float               --max fitness
+               ,Float               --sum of fitnesses
+               ,(Float,Genome)      --representative genome
+               ,[(Float,Genome)])   --rest of genomes
+
+
+ --general idea for how the main loop will work. will probably 
+ --need some IO
+run :: RandomGen g => g -> [Float] -> Population -> Population
+run gen inputs p0 = p3 where
+  p1 = map (evalSpecies inputs) p0
+  p2 = cull p0
+  p3 = reproduce gen p2
+
+--calculates the fitness of each genome in species
+evalSpecies :: [Float] -> Species -> Species
+evalSpecies inputs s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') where
+  i' | max_f0 < max_f = 0 | otherwise = i0 + 1 --update stagnation counter
+  ((sum_f,max_f),gs') = mapAccumL go (0,0) gs0 --get sum and max fitness of species
+  n = fromIntegral $ length gs0 --number of genomes in species
+  go :: (Float,Float) -> (Float,Genome) -> ((Float,Float),(Float,Genome))
+  go (acc,old_max) (_,g) = ((acc + f',new_max),(f',g)) where
+    f = fitnessOfJ (evaluateGenome inputs g)
+    f' = f / n
+    new_max = max old_max f'
+
+--produces the next generation of genomes
+reproduce :: RandomGen g => g -> Population -> Population
+reproduce gen population = population' where
+  (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + 1 + lengthNum gs)) (0.0,0.0) population
+  prev_species = map (\(i0,_,_,_,gs) -> let (g',_) = randomElem gen gs in (i0,0,0,g',[])) population
+  genomes = concatMap (\(i0,max_f0,sum_f0,g0,gs0) -> let num_offspring = round $ sum_f0 / p_sum_f * p_size
+                                                         (gs',_) = breedSpecies num_offspring (map snd $ gs0) (randomRs (0,1) gen)
+                                                     in gs') 
+                      population
+  population' = speciefy prev_species genomes
+
+speciefy :: [Species] -> [Genome] -> [Species]
+speciefy species [] = []
+speciefy species (g:gs)
+  | isNothing matchIx = speciefy ((0,0,0,(0,g),[]):species) gs
+  | otherwise = speciefy species' gs where
+  matchIx = findSpecies g species
+  i = fromJust matchIx
+  (si,sm,ss,sg,sgs) = species !! i
+  species' = take i species ++ (si,sm,ss,sg,(0,g):sgs) : drop (i + 1) species
+  
+findSpecies :: Genome -> [Species] -> Maybe Int
+findSpecies g = findIndex (\(_,_,_,(_,repG),_) -> geneticDifference repG g < speciationThreshold)
+
+
+--removes species whos fitness has stagnated and removes
+--the least fit genomes from each species
+cull :: Population -> Population
+cull = map (cullSpecies speciesMaxSize) . filter (\(i,_,_,_,_) -> i < maxStagnation)
+  
+
+--will probably need some IO
+fitnessOfJ :: Joystick -> Float
+fitnessOfJ j = undefined
 
 -- is this done right ? the formula from the paper is
 -- delta = c1*E/N + c2*D/N + c3*W_bar 
@@ -97,28 +157,20 @@ breedChild gs (r:(r1:(r2:rs)))
   | r < 0.7 = crossover (getElementR gs r1) (getElementR gs r2) rs
   | otherwise = (getElementR gs r1, r2:rs)
 
--- cullSpecies takes the number to keep per species
--- along with the population (a list of each genome tupled with
--- its fitness and its fitness x generations ago
--- so this should be called after each generation is done
--- running
-cullSpecies :: Int -> [(Genome,Float)] -> [(Genome,Float)]
-cullSpecies numberToLeave population = concatMap (take numberToLeave) speciesSorted
-    where
-        species :: [[(Genome,Float)]]
-        species = groupBy (\(a,_) (b,_) -> geneticDifference a b < speciationThreshold) population
-        speciesSorted :: [[(Genome,Float)]]
-        speciesSorted = map (sortBy (\(_,a) (_,b) -> compare a b)) species
+cullSpecies :: Int -> Species-> Species
+cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,head gs',tail gs')
+  where sorted = sortBy (\(a,_) (b,_) -> compare a b) (g:gs)
+        gs' = take numberToLeave sorted
 
 -- the sum of the adjustedFitness
 -- of a species determines
 -- the number of offspring they will
 -- have in the next generation
-adjustedFitness :: Genome -> Float -> Population -> Float
-adjustedFitness genome fitness population = fitness / modifier
-    where
-        modifier = sum $ map (sharing . geneticDifference genome) population
-        sharing x = if x < speciationThreshold then 1.0 else 0.0
+--adjustedFitness :: Genome -> Float -> Population -> Float
+--adjustedFitness genome fitness population = fitness / modifier
+--    where
+--        modifier = sum $ map (sharing . geneticDifference genome) population
+--        sharing x = if x < speciationThreshold then 1.0 else 0.0
 
 -- greater than 0.5 and we press the button
 -- output neurons must be in same order as
@@ -126,8 +178,8 @@ adjustedFitness genome fitness population = fitness / modifier
 -- though obviously its random start so this
 -- will always evolve to work
 maxLinkLength = 40 -- the max number to backjump, so we don't get stuck in loops
-evaluateGenome :: Genome -> [Float] -> Joystick
-evaluateGenome (Genome maxNode genes) inputs = fromListJ (map (>0.5) outs)
+evaluateGenome :: [Float] -> Genome -> Joystick
+evaluateGenome inputs (Genome maxNode genes) = fromListJ (map (>0.5) outs)
     where
         outs = map (evaluateNode maxLinkLength) [numInputs..numInputs+numOutputs]
         evaluateNode :: Int -> Int -> Float
@@ -177,7 +229,7 @@ uncurry3 f (a,b,c) = f a b c
 mutate :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate gInnov genome (r:rs)
   | r < 0.1 = uncurry3 mutate $ addLink gInnov genome rs
-  | r < 0.15 = uncurry3 mutate $ addNode gInnov genome rs
+  | r < 0.15 = uncurry3 mutate $  addNode gInnov genome rs
   | r < 0.45 = uncurry3 mutate $ disableGene gInnov genome rs
   | r < 0.6 = uncurry3 mutate $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
@@ -211,3 +263,13 @@ sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 getElementR :: [a] -> Float -> a
 getElementR xs r = xs !! floor ( r * fromIntegral (length xs))
 
+randomElem :: RandomGen g => g -> [a] -> (a,g)
+randomElem gen xs = (xs !! i,gen') where
+  (i,gen') = randomR (0,length xs - 1) gen
+
+
+mapT :: (a -> b) -> (a,a) -> (b,b)
+mapT f (a,b) = (f a,f b)
+
+lengthNum :: Num b => [a] -> b
+lengthNum = fromIntegral . length
