@@ -22,10 +22,6 @@ isHidden n = not (isInput n) && not (isOutput n)
 maxStagnation = 15 --generations a genome is allowed to survive without improving fitness
 
 -- TODO:
--- if a species does not improve fitness after 15 generations
--- we need to eliminate it
--- The best genome of each species with at least 5 genomes
--- should be copied to the next generation unmodified
 --
 -- Mutation rates:
 -- 80% of weight mutation
@@ -59,34 +55,51 @@ weightedVsTopology = 0.4 -- this was 3.0 for DPLV (HARD problem)
 speciesMaxSize = 100 :: Int
 
 type Population = [Species]
-type Species = (Int                 --stagnation
-               ,Float               --max fitness
-               ,Float               --sum of fitnesses
-               ,(Float,Genome)      --representative genome
-               ,[(Float,Genome)])   --rest of genomes
+type Species = ( Int                 --stagnation
+               , Float               --max fitness
+               , Float               --sum of fitnesses
+               , (Float,Genome)      --representative genome
+               , [(Float,Genome)])   --rest of genomes
 
 
- --general idea for how the main loop will work. will probably 
- --need some IO
-run :: RandomGen g => g -> [Float] -> Population -> Population
-run gen inputs p0 = p3 where
-  p1 = map (evalSpecies inputs) p0
+--creates initial population
+--random generator, intial size, num inputs, num outputs, num biases
+createPopulation :: RandomGen g => g -> Int -> Int -> Int -> Int -> Population
+createPopulation rgen size num_in num_out num_bs = [species] where
+  species = (0,0.0,0.0,(0.0,genome),genomes)
+  genomes = zip (repeat 0) (replicate size genome)
+  genome = Genome (length genes) genes
+  genes = zipWith3 (\g w i -> set weight w (set innovation i g))
+                   g0s (randomRs (0,1) rgen) [1..]
+  g0s = [ Gene inN outN 0 True 0 | inN <- [num_bs + 1 .. num_in] 
+                                 , outN <- [1 .. num_out] ]
+  
+
+
+
+run :: RandomGen g => g -> (Genome -> Float) -> Population -> Population
+run gen fitnessFunction p0 = p3 where
+  p1 = map (evalSpecies fitnessFunction) p0
   p2 = cull p0
   p3 = reproduce gen p2
 
+
+
 --calculates the fitness of each genome in species
-evalSpecies :: [Float] -> Species -> Species
-evalSpecies inputs s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') where
+evalSpecies :: (Genome -> Float) -> Species -> Species
+evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') where
   i' | max_f0 < max_f = 0 | otherwise = i0 + 1 --update stagnation counter
   ((sum_f,max_f),gs') = mapAccumL go (0,0) gs0 --get sum and max fitness of species
   n = fromIntegral $ length gs0 --number of genomes in species
   go :: (Float,Float) -> (Float,Genome) -> ((Float,Float),(Float,Genome))
   go (acc,old_max) (_,g) = ((acc + f',new_max),(f',g)) where
-    f = fitnessOfJ (evaluateGenome inputs g)
+    f = fitnessFunc g
     f' = f / n
     new_max = max old_max f'
 
+
 --produces the next generation of genomes
+--TODO copy best performing genome of species with > 5 genomes unaltered
 reproduce :: RandomGen g => g -> Population -> Population
 reproduce gen population = population' where
   (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + 1 + lengthNum gs)) (0.0,0.0) population
@@ -97,6 +110,8 @@ reproduce gen population = population' where
                       population
   population' = speciefy prev_species genomes
 
+--divides a list of genomes into a list os species
+--requires a list of representative species from the last generation
 speciefy :: [Species] -> [Genome] -> [Species]
 speciefy species [] = []
 speciefy species (g:gs)
@@ -117,9 +132,6 @@ cull :: Population -> Population
 cull = map (cullSpecies speciesMaxSize) . filter (\(i,_,_,_,_) -> i < maxStagnation)
   
 
---will probably need some IO
-fitnessOfJ :: Joystick -> Float
-fitnessOfJ j = undefined
 
 -- is this done right ? the formula from the paper is
 -- delta = c1*E/N + c2*D/N + c3*W_bar 
