@@ -11,6 +11,6 @@ main :: IO ()
 main = do
     let p = createPopulation (mkStdGen 0) 10 1 2 1
     print $ fittestGenome p
-    let p' = run (mkStdGen 0) fitnessXor p 10
+    let p' = run (mkStdGen 0) fitnessXor 0 p 10
     print $ fittestGenome p
     return ()

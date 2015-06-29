@@ -4,7 +4,6 @@ module NeuralNetwork where
 
 import Emulator
 import System.Random
-import System.Random.Shuffle
 import Data.List
 import Data.Maybe
 import Control.Lens
@@ -88,12 +87,13 @@ createPopulation rgen size num_bs num_in num_out = [species] where
 
 --random generator, function from genome to a fitness, population, max
 --number of generations to run
-run :: RandomGen g => g -> (Genome -> Float) -> Population -> Int -> Population
-run _ _ p0 0 = p0
-run gen fitnessFunc p0 n = run (snd $ next gen) fitnessFunc p3 (n - 1) where
-  p1 = map (evalSpecies fitnessFunc) p0
-  p2 = cull p0
-  p3 = reproduce gen p2
+run :: RandomGen g => g -> (Genome -> Float) -> Int -> Population -> Int -> Population
+run _ _ _ p0 0 = p0
+run gen fitnessFunc gInnov p0 n = run (snd $ next gen) fitnessFunc gInnov' p3 (n - 1)
+  where
+    p1 = map (evalSpecies fitnessFunc) p0
+    p2 = cull p0
+    (gInnov',p3) = reproduce gen gInnov p2
 
 
 
@@ -112,14 +112,17 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') wh
 
 --produces the next generation of genomes
 --TODO copy best performing genome of species with > 5 genomes unaltered
-reproduce :: RandomGen g => g -> Population -> Population
-reproduce gen population = population' where
+reproduce :: RandomGen g => g -> Int -> Population -> (Int,Population)
+reproduce gen gInnov0 population = (gInnov'',population') where
   (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + 1 + lengthNum gs)) (0.0,0.0) population
   prev_species = map (\(i0,_,_,_,gs) -> let (g',_) = randomElem gen gs in (i0,0,0,g',[])) population
-  genomes = concatMap (\(i0,max_f0,sum_f0,g0,gs0) -> let num_offspring = round $ sum_f0 / p_sum_f * p_size
-                                                         (gs',_) = breedSpecies num_offspring (map snd $ gs0) (randomRs (0,1) gen)
-                                                     in gs') 
-                      population
+  genomes = concat gss
+  (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
+                                let num_offspring = round $ sum_f0 / p_sum_f * p_size
+                                    (gInnov',gs',_) = breedSpecies gInnov num_offspring (map snd $ gs0) (randomRs (0,1) gen)
+                                in (gInnov',gs')) 
+                             gInnov0
+                             population
   population' = speciefy prev_species genomes
 
 --divides a list of genomes into a list os species
@@ -167,19 +170,23 @@ geneticDifference g1 g2 = excess_disjoint / num + weightedVsTopology * (diff / f
         diff = sum $ map (\(a,b) -> abs $ a^.weight - b^.weight) genesBoth
         num = fromIntegral $ max (g1^.genes.to length) (g2^.genes.to length)
 
-breedSpecies :: Int -> [Genome] -> [Float] -> ([Genome],[Float])
-breedSpecies 0 species rs = ([],rs)
-breedSpecies n species rs = (newChild : otherChildren, rs'')
+breedSpecies :: Int -> Int -> [Genome] -> [Float] -> (Int,[Genome],[Float])
+breedSpecies gInnov 0 species rs = (gInnov,[],rs)
+breedSpecies gInnov n species rs = (gInnov'',newChild : otherChildren, rs'')
     where
-        (otherChildren, rs'') = breedSpecies (n-1) species rs'
-        (newChild,rs') = breedChild species rs
+        (gInnov',newChild,rs') = breedChild gInnov species rs
+        (gInnov'',otherChildren, rs'') = breedSpecies gInnov' (n-1) species rs'
 
 -- breedChild requires that only genomes IN THE SAME SPECIES are passed
 crossoverChance = 0.7
-breedChild :: [Genome] -> [Float] -> (Genome,[Float])
-breedChild gs (r:(r1:(r2:rs)))
-  | r < 0.7 = crossover (getElementR gs r1) (getElementR gs r2) rs
-  | otherwise = (getElementR gs r1, r2:rs)
+breedChild :: Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
+breedChild gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
+  where dad = getElementR gs r1
+        mom = getElementR gs r2
+        (child,rs') | r < 0.7 = crossover dad mom rs
+                    | otherwise = (getElementR gs r1, r2:rs)
+        (gInnov',monster,rs'') = mutate gInnov child rs'
+            
 
 cullSpecies :: Int -> Species-> Species
 cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,head gs',tail gs')
