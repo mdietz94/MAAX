@@ -9,6 +9,8 @@ import Data.List
 import Data.Maybe
 import Control.Lens
 import Control.Arrow ((&&&))
+import Control.Applicative ((<*>))
+import Data.Functor ((<$>))
 
 populationSize = 200
 
@@ -37,12 +39,12 @@ data Gene = Gene { _input      :: Int
                  , _output     :: Int
                  , _weight     :: Float
                  , _enabled    :: Bool
-                 , _innovation :: Int } deriving (Eq)
+                 , _innovation :: Int } deriving (Show, Read, Eq)
 makeClassy ''Gene
 
 data Genome = Genome { _numnodes :: Int
                      , _genes :: [Gene]
-                     }
+                     } deriving (Show, Read, Eq)
 makeClassy ''Genome
 
 
@@ -63,9 +65,9 @@ type Species = ( Int                 --stagnation
 
 
 --creates initial population
---random generator, intial size, num inputs, num outputs, num biases
+--random generator, intial size, num biases, num inputs, num outputs
 createPopulation :: RandomGen g => g -> Int -> Int -> Int -> Int -> Population
-createPopulation rgen size num_in num_out num_bs = [species] where
+createPopulation rgen size num_bs num_in num_out = [species] where
   species = (0,0.0,0.0,(0.0,genome),genomes)
   genomes = zip (repeat 0) (replicate size genome)
   genome = Genome (length genes) genes
@@ -76,10 +78,12 @@ createPopulation rgen size num_in num_out num_bs = [species] where
   
 
 
-
-run :: RandomGen g => g -> (Genome -> Float) -> Population -> Population
-run gen fitnessFunction p0 = p3 where
-  p1 = map (evalSpecies fitnessFunction) p0
+--random generator, function from genome to a fitness, population, max
+--number of generations to run
+run :: RandomGen g => g -> (Genome -> Float) -> Population -> Int -> Population
+run _ _ p0 0 = p0
+run gen fitnessFunc p0 n = run (snd $ next gen) fitnessFunc p3 (n - 1) where
+  p1 = map (evalSpecies fitnessFunc) p0
   p2 = cull p0
   p3 = reproduce gen p2
 
@@ -205,6 +209,22 @@ evaluateGenome inputs (Genome maxNode genes) = fromListJ (map (>0.5) outs)
                 isMyGene :: Gene -> Bool
                 isMyGene g = g^.enabled && g^.output == n
 
+--a more general evalute genome?
+evaluateGenome' :: [Float] -> Genome -> [Float]
+evaluateGenome' inputs (Genome maxNode genes) = outs
+    where
+        outs = map (evaluateNode maxLinkLength) [numInputs..numInputs+numOutputs]
+        evaluateNode :: Int -> Int -> Float
+        evaluateNode links n
+          | links == 0 = 0.0
+          | isInput n = inputs !! n
+          | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
+            where
+                evaluateGene :: Gene -> Float
+                evaluateGene g = g^.weight * evaluateNode (links-1) (g^.input)
+                isMyGene :: Gene -> Bool
+                isMyGene g = g^.enabled && g^.output == n
+
 addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
 addNode gInnov (Genome numnodes genes) (r:rs) = (gInnov+2,Genome (numnodes+1) genes', rs)
     where
@@ -275,6 +295,15 @@ sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 getElementR :: [a] -> Float -> a
 getElementR xs r = xs !! floor ( r * fromIntegral (length xs))
 
+maxFittestSpecies :: Population -> Species
+maxFittestSpecies = maximumBy (\(_,a,_,_,_) (_,b,_,_,_) -> compare a b)
+
+maxFittestGenome :: Species -> Genome
+maxFittestGenome (_,_,_,_,gs) = snd (maximumBy (\(f0,_) (f1,_) -> compare f0 f1) gs)
+
+fittestGenome :: Population -> Genome
+fittestGenome = maxFittestGenome . maxFittestSpecies
+
 randomElem :: RandomGen g => g -> [a] -> (a,g)
 randomElem gen xs = (xs !! i,gen') where
   (i,gen') = randomR (0,length xs - 1) gen
@@ -285,3 +314,26 @@ mapT f (a,b) = (f a,f b)
 
 lengthNum :: Num b => [a] -> b
 lengthNum = fromIntegral . length
+
+
+--XOR code for testing neural network
+xor :: Float -> Float -> Float
+xor 1 0 = 1
+xor 0 1 = 1
+xor _ _ = 0
+
+inputs :: [[Float]]
+inputs = [[0,0],[0,1],[1,0],[1,1]]
+
+outputs :: [Float]
+outputs = map (foldl1' xor) inputs
+
+{- To compute fitness for XOR, the distance of the output from the correct 
+- answer is summed for all four input patterns. The result of this error
+- is subtracted from four so that higher fitness reflect better
+- network structure. The result is squared to give proportionally more
+- fitness the closer the network is to a solution
+-}
+fitnessXor :: Genome -> Float
+fitnessXor g = let genome_outs = concat $ map (flip evaluateGenome' g) inputs
+               in (4 - sum ((-) <$> outputs <*> genome_outs)) ^ 2
