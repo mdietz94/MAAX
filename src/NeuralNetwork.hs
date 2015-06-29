@@ -44,9 +44,12 @@ makeClassy ''Gene
 
 data Genome = Genome { _numnodes :: Int
                      , _genes :: [Gene]
-                     } deriving (Show, Read, Eq)
+                     } deriving (Read, Eq)
 makeClassy ''Genome
 
+instance Show Genome where
+    show (Genome n gs) = "Genome[" ++ show n ++ "]{" ++ 
+                         concat (map (\g -> "\n\t" ++ show g) gs) ++ "\n\t}"
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
 
@@ -66,6 +69,11 @@ type Species = ( Int                 --stagnation
 
 --creates initial population
 --random generator, intial size, num biases, num inputs, num outputs
+--TODO better way to do biases? right now we just treat them as input nodes
+--   this causes potential bug if input node forms a connection to another
+--   input node because biases should not be able to connect to other
+--   inputs. We also have to adjust the fitness function to add the bias
+--   values to the front of the inputs
 createPopulation :: RandomGen g => g -> Int -> Int -> Int -> Int -> Population
 createPopulation rgen size num_bs num_in num_out = [species] where
   species = (0,0.0,0.0,(0.0,genome),genomes)
@@ -73,7 +81,7 @@ createPopulation rgen size num_bs num_in num_out = [species] where
   genome = Genome (length genes) genes
   genes = zipWith3 (\g w i -> set weight w (set innovation i g))
                    g0s (randomRs (0,1) rgen) [1..]
-  g0s = [ Gene inN outN 0 True 0 | inN <- [num_bs + 1 .. num_in] 
+  g0s = [ Gene inN outN 0 True 0 | inN <- [1 .. num_bs + num_in] 
                                  , outN <- [1 .. num_out] ]
   
 
@@ -335,5 +343,6 @@ outputs = map (foldl1' xor) inputs
 - fitness the closer the network is to a solution
 -}
 fitnessXor :: Genome -> Float
-fitnessXor g = let genome_outs = concat $ map (flip evaluateGenome' g) inputs
+fitnessXor g = let inputs' = map (1:) inputs --add bias to first input
+                   genome_outs = concat $ map (flip evaluateGenome' g) inputs'
                in (4 - sum ((-) <$> outputs <*> genome_outs)) ^ 2
