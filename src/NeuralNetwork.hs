@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 
 module NeuralNetwork where
 
@@ -10,17 +11,52 @@ import Control.Lens
 import Control.Arrow ((&&&))
 import Control.Applicative ((<*>))
 import Data.Functor ((<$>))
+import Debug.Trace
 
-populationSize = 200
+--populationSize = 200
+--numInputs = 8
+--numOutputs = 6
+--speciationThreshold = 3.0 :: Float -- this was 4.0 for DPLV (HARD Problem)
+--weightedVsTopology = 0.4 -- this was 3.0 for DPLV (HARD problem)
+--speciesMaxSize = 100 :: Int
+--maxStagnation = 15 --generations a genome is allowed to survive without improving fitness
+--crossoverChance = 0.7
+-- 90% chance to make a small change
+-- 10% chance to reset completely
+--smallScale = 0.2
+--largeScale = 2.0
+--maxLinkLength = 40 -- the max number to backjump, so we don't get stuck in loops
 
-numInputs = 8
-numOutputs = 6
+isInput = error "(<numInputs)"
+--isOutput n = not (isInput n) && n < numInputs+numOutputs
+--isHidden n = not (isInput n) && not (isOutput n)
 
-isInput = (<numInputs)
-isOutput n = not (isInput n) && n < numInputs+numOutputs
-isHidden n = not (isInput n) && not (isOutput n)
+data Config = Config { _numInputs            :: Int
+                     , _numOutputs           :: Int
+                     , _populationSize       :: Int
+                     , _speciesMaxSize      :: Int
+                     , _stagnationMax        :: Int
+                     , _speciationThreshold  :: Float
+                     , _weightedVsTopology    :: Float
+                     , _crossoverChance      :: Float
+                     , _smallScale           :: Float
+                     , _largeScale           :: Float
+                     , _maxLinkLength         :: Int
+                     } deriving (Show, Eq, Read)
+makeClassy ''Config
 
-maxStagnation = 15 --generations a genome is allowed to survive without improving fitness
+defaultConfig = Config { _numInputs = 8
+                       , _numOutputs = 6
+                       , _populationSize = 200
+                       , _speciesMaxSize = 100
+                       , _stagnationMax = 15
+                       , _speciationThreshold = 3.0
+                       , _weightedVsTopology = 0.4
+                       , _crossoverChance = 0.7
+                       , _smallScale = 0.2
+                       , _largeScale = 2.0
+                       , _maxLinkLength = 40
+                       }
 
 -- TODO:
 --
@@ -52,11 +88,7 @@ instance Show Genome where
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
 
-speciationThreshold = 3.0 :: Float -- this was 4.0 for DPLV (HARD Problem)
 
-weightedVsTopology = 0.4 -- this was 3.0 for DPLV (HARD problem)
-
-speciesMaxSize = 100 :: Int
 
 type Population = [Species]
 type Species = ( Int                 --stagnation
@@ -67,33 +99,31 @@ type Species = ( Int                 --stagnation
 
 
 --creates initial population
---random generator, intial size, num biases, num inputs, num outputs
---TODO better way to do biases? right now we just treat them as input nodes
---   this causes potential bug if input node forms a connection to another
---   input node because biases should not be able to connect to other
---   inputs. We also have to adjust the fitness function to add the bias
---   values to the front of the inputs
-createPopulation :: RandomGen g => g -> Int -> Int -> Int -> Int -> (Int,Population)
-createPopulation rgen size num_bs num_in num_out = (length genes,[species]) where
+--random generator, intial size, num inputs, num outputs
+--TODO add biases
+createPopulation :: RandomGen g => g -> Int -> Int -> Int -> (Int,Population)
+createPopulation rgen size num_in num_out = (length genes,[species]) where
   species = (0,0.0,0.0,(0.0,genome),genomes)
   genomes = zip (repeat 0) (replicate size genome)
   genome = Genome (length genes) genes
   genes = zipWith3 (\g w i -> set weight w (set innovation i g))
                    g0s (randomRs (0,1) rgen) [0..]
-  g0s = [ Gene inN outN 0 True 0 | inN <- [1 .. num_bs + num_in] 
+  g0s = [ Gene inN outN 0 True 0 | inN <- [1 .. num_in] 
                                  , outN <- [1 .. num_out] ]
   
 
 
 --random generator, function from genome to a fitness, population, max
 --number of generations to run
-run :: RandomGen g => g -> (Genome -> Float) -> Int -> Population -> Int -> Population
-run _ _ _ p0 0 = p0
-run gen fitnessFunc gInnov p0 n = run (snd $ next gen) fitnessFunc gInnov' p3 (n - 1)
+run :: RandomGen g => g -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
+run _ _ _ _ p0 0 = p0
+run gen config fitnessFunc gInnov !p0 n 
+  | trace ("n: " ++ show n ++ "\np0: " ++ show p0 ++ "\np1: " ++ show p1 ++ "\np2: " ++ show p2 ++ "\np3: " ++ show p3) False = undefined
+  | otherwise = run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
   where
     p1 = map (evalSpecies fitnessFunc) p0
-    p2 = cull p0
-    (gInnov',p3) = reproduce gen gInnov p2
+    p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1
+    (gInnov',p3) = reproduce gen (config ^. weightedVsTopology) (config ^. speciationThreshold) gInnov p2
 
 
 
@@ -112,10 +142,10 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') wh
 
 --produces the next generation of genomes
 --TODO copy best performing genome of species with > 5 genomes unaltered
-reproduce :: RandomGen g => g -> Int -> Population -> (Int,Population)
-reproduce gen gInnov0 population = (gInnov'',population') where
-  (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + 1 + lengthNum gs)) (0.0,0.0) population
-  prev_species = map (\(i0,_,_,_,gs) -> let (g',_) = randomElem gen gs in (i0,0,0,g',[])) population
+reproduce :: RandomGen g => g -> Float -> Float -> Int -> Population -> (Int,Population)
+reproduce gen wghtVsTop specThresh gInnov0 population = (gInnov'',population') where
+  (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + lengthNum gs)) (0.0,0.0) population --count population sum fitness and size (is size constant?)
+  prev_species = map (\(i0,_,_,_,gs) -> let (g',_) = randomElem gen gs in (i0,0,0,g',[])) population --pick random genome from prev generation
   genomes = concat gss
   (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
                                 let num_offspring = round $ sum_f0 / p_sum_f * p_size
@@ -123,28 +153,28 @@ reproduce gen gInnov0 population = (gInnov'',population') where
                                 in (gInnov',gs')) 
                              gInnov0
                              population
-  population' = speciefy prev_species genomes
+  population' = speciefy wghtVsTop specThresh prev_species genomes
 
 --divides a list of genomes into a list os species
 --requires a list of representative species from the last generation
-speciefy :: [Species] -> [Genome] -> [Species]
-speciefy species [] = []
-speciefy species (g:gs)
-  | isNothing matchIx = speciefy ((0,0,0,(0,g),[]):species) gs
-  | otherwise = speciefy species' gs where
-  matchIx = findSpecies g species
+speciefy :: Float -> Float -> [Species] -> [Genome] -> [Species]
+speciefy _ _ _ [] = []
+speciefy wghtVsTop specThresh species (g:gs)
+  | isNothing matchIx = speciefy wghtVsTop specThresh ((0,0,0,(0,g),[]):species) gs
+  | otherwise = speciefy wghtVsTop specThresh species' gs where
+  matchIx = findSpecies wghtVsTop specThresh g species
   i = fromJust matchIx
   (si,sm,ss,sg,sgs) = species !! i
   species' = take i species ++ (si,sm,ss,sg,(0,g):sgs) : drop (i + 1) species
   
-findSpecies :: Genome -> [Species] -> Maybe Int
-findSpecies g = findIndex (\(_,_,_,(_,repG),_) -> geneticDifference repG g < speciationThreshold)
+findSpecies :: Float -> Float -> Genome -> [Species] -> Maybe Int
+findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,(_,repG),_) -> geneticDifference wghtVsTop repG g < specThresh)
 
 
 --removes species whos fitness has stagnated and removes
 --the least fit genomes from each species
-cull :: Population -> Population
-cull = map (cullSpecies speciesMaxSize) . filter (\(i,_,_,_,_) -> i < maxStagnation)
+cull :: Int -> Int -> Population -> Population
+cull maxSize maxStag = map (cullSpecies maxSize) . filter (\(i,_,_,_,_) -> i < maxStag)
   
 
 
@@ -160,8 +190,8 @@ cull = map (cullSpecies speciesMaxSize) . filter (\(i,_,_,_,_) -> i < maxStagnat
 --      but we want disjoint + excess to be [6,7,8,9,10]
 --      so union \\ intersection does the job, could probably be made more
 --      effiecient
-geneticDifference :: Genome -> Genome -> Float
-geneticDifference g1 g2 = excess_disjoint / num + weightedVsTopology * (diff / fromIntegral (length genesBoth))
+geneticDifference :: Float -> Genome -> Genome -> Float
+geneticDifference wghtVsTop g1 g2 = excess_disjoint / num + wghtVsTop * (diff / fromIntegral (length genesBoth))
     where
         excess_disjoint = fromIntegral . length $ (union genes1Inn genes2Inn) \\ (intersect genes1Inn genes2Inn)
         genes1Inn = map (^.innovation) . filter (^.enabled) $ g1^.genes
@@ -178,7 +208,6 @@ breedSpecies gInnov n species rs = (gInnov'',newChild : otherChildren, rs'')
         (gInnov'',otherChildren, rs'') = breedSpecies gInnov' (n-1) species rs'
 
 -- breedChild requires that only genomes IN THE SAME SPECIES are passed
-crossoverChance = 0.7
 breedChild :: Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
 breedChild gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
   where dad = getElementR gs r1
@@ -189,8 +218,8 @@ breedChild gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
             
 
 cullSpecies :: Int -> Species-> Species
-cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,head gs',tail gs')
-  where sorted = sortBy (\(a,_) (b,_) -> compare a b) (g:gs)
+cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
+  where sorted = sortBy (\(a,_) (b,_) -> compare a b) gs
         gs' = take numberToLeave sorted
 
 -- the sum of the adjustedFitness
@@ -208,31 +237,31 @@ cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,head gs',tail gs')
 -- fromListJ expects
 -- though obviously its random start so this
 -- will always evolve to work
-maxLinkLength = 40 -- the max number to backjump, so we don't get stuck in loops
-evaluateGenome :: [Float] -> Genome -> Joystick
-evaluateGenome inputs (Genome maxNode genes) = fromListJ (map (>0.5) outs)
-    where
-        outs = map (evaluateNode maxLinkLength) [numInputs..numInputs+numOutputs]
-        evaluateNode :: Int -> Int -> Float
-        evaluateNode links n
-          | links == 0 = 0.0
-          | isInput n = inputs !! n
-          | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
-            where
-                evaluateGene :: Gene -> Float
-                evaluateGene g = g^.weight * evaluateNode (links-1) (g^.input)
-                isMyGene :: Gene -> Bool
-                isMyGene g = g^.enabled && g^.output == n
+--maxLinkLength = 40 -- the max number to backjump, so we don't get stuck in loops
+--evaluateGenome :: [Float] -> Genome -> Joystick
+--evaluateGenome inputs (Genome maxNode genes) = fromListJ (map (>0.5) outs)
+--    where
+--        outs = map (evaluateNode maxLinkLength) [numInputs..numInputs+numOutputs]
+--        evaluateNode :: Int -> Int -> Float
+--        evaluateNode links n
+--          | links == 0 = 0.0
+--          | isInput n = inputs !! n
+--          | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
+--            where
+--                evaluateGene :: Gene -> Float
+--                evaluateGene g = g^.weight * evaluateNode (links-1) (g^.input)
+--                isMyGene :: Gene -> Bool
+--                isMyGene g = g^.enabled && g^.output == n
 
 --a more general evalute genome?
-evaluateGenome' :: [Float] -> Genome -> [Float]
-evaluateGenome' inputs (Genome maxNode genes) = outs
+evaluateGenome' :: Int -> Int -> Int -> [Float] -> Genome -> [Float]
+evaluateGenome' maxLL numIn numOut inputs (Genome maxNode genes) = outs
     where
-        outs = map (evaluateNode maxLinkLength) [numInputs..numInputs+numOutputs]
+        outs = map (evaluateNode maxLL) [numIn..numIn + numOut]
         evaluateNode :: Int -> Int -> Float
         evaluateNode links n
           | links == 0 = 0.0
-          | isInput n = inputs !! n
+          | n < numIn = inputs !! n
           | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
             where
                 evaluateGene :: Gene -> Float
@@ -288,10 +317,6 @@ mutate gInnov genome (r:rs)
             where
                 smallChange = floor (r * 100.0) `mod` 10 > 0
 
--- 90% chance to make a small change
--- 10% chance to reset completely
-smallScale = 0.2
-largeScale = 2.0
 
 -- genome1 MUST be fitter than genome2!
 -- breeds 2 genomes together
@@ -317,7 +342,8 @@ maxFittestGenome :: Species -> Genome
 maxFittestGenome (_,_,_,_,gs) = snd (maximumBy (\(f0,_) (f1,_) -> compare f0 f1) gs)
 
 fittestGenome :: Population -> Genome
-fittestGenome = maxFittestGenome . maxFittestSpecies
+fittestGenome [] = error "empty population"
+fittestGenome p = maxFittestGenome . maxFittestSpecies $ p
 
 randomElem :: RandomGen g => g -> [a] -> (a,g)
 randomElem gen xs = (xs !! i,gen') where
@@ -349,7 +375,6 @@ outputs = map (foldl1' xor) inputs
 - network structure. The result is squared to give proportionally more
 - fitness the closer the network is to a solution
 -}
-fitnessXor :: Genome -> Float
-fitnessXor g = let inputs' = map (1:) inputs --add bias to first input
-                   genome_outs = concat $ map (flip evaluateGenome' g) inputs'
-               in (4 - sum ((-) <$> outputs <*> genome_outs)) ^ 2
+fitnessXor :: Int -> Int -> Int -> Genome -> Float
+fitnessXor maxLL numIn numOut g = let genome_outs = concat $ map (flip (evaluateGenome' maxLL numIn numOut) g) inputs
+                            in (4 - sum ((-) <$> outputs <*> genome_outs)) ^ 2

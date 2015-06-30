@@ -1,6 +1,7 @@
 import Emulator
 import NeuralNetwork
 import System.Random
+import Control.Lens
 import qualified Data.ByteString as B (writeFile)
 
 -- main = do
@@ -9,8 +10,10 @@ import qualified Data.ByteString as B (writeFile)
 
 main :: IO ()
 main = do
-    let p = createPopulation (mkStdGen 0) 10 1 2 1
+    let config = defaultConfig
+    let (gInnov,p) = createPopulation (mkStdGen 0) 10 2 1
     print $ fittestGenome p
-    let p' = run (mkStdGen 0) fitnessXor 0 p 10
-    print $ fittestGenome p
-    return ()
+    print p
+    let p' = run (mkStdGen 0) config (fitnessXor (config ^. maxLinkLength) (config ^. numInputs) (config ^. numOutputs)) gInnov p 10
+    --print $ fittestGenome p'
+    print p'
