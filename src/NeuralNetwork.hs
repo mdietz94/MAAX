@@ -13,23 +13,6 @@ import Control.Applicative ((<*>))
 import Data.Functor ((<$>))
 import Debug.Trace
 
---populationSize = 200
---numInputs = 8
---numOutputs = 6
---speciationThreshold = 3.0 :: Float -- this was 4.0 for DPLV (HARD Problem)
---weightedVsTopology = 0.4 -- this was 3.0 for DPLV (HARD problem)
---speciesMaxSize = 100 :: Int
---maxStagnation = 15 --generations a genome is allowed to survive without improving fitness
---crossoverChance = 0.7
--- 90% chance to make a small change
--- 10% chance to reset completely
---smallScale = 0.2
---largeScale = 2.0
---maxLinkLength = 40 -- the max number to backjump, so we don't get stuck in loops
-
-isInput = error "(<numInputs)"
---isOutput n = not (isInput n) && n < numInputs+numOutputs
---isHidden n = not (isInput n) && not (isOutput n)
 
 data Config = Config { _numInputs            :: Int
                      , _numOutputs           :: Int
@@ -50,7 +33,7 @@ xorConfig = Config { _numInputs = 2
                    , _populationSize = 10
                    , _speciesMaxSize = 10
                    , _stagnationMax = 15
-                   , _speciationThreshold = 3.0
+                   , _speciationThreshold = 3.0    -- this was 4.0 for DPLV (HARD Problem)
                    , _weightedVsTopology = 0.4
                    , _crossoverChance = 0.7
                    , _smallScale = 0.2
@@ -84,7 +67,8 @@ makeClassy ''Genome
 
 instance Show Genome where
     show (Genome n gs) = "Genome[" ++ show n ++ "]{" ++ 
-                         concat (map (\g -> "\n\t" ++ show g) gs) ++ "\n\t}"
+                         concat (map (\g -> "\n" ++ show g) gs) ++ "\n}"
+
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
 
@@ -119,11 +103,11 @@ run :: RandomGen g => g -> Config -> (Genome -> Float) -> Int -> Population -> I
 run _ _ _ _ p0 0 = p0
 run gen config fitnessFunc gInnov p0 n = run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
   where
+    p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1
     (gInnov',p3) = reproduce gen (config ^. weightedVsTopology) (config ^. speciationThreshold) gInnov p2
 
---  | trace ("n: " ++ show n ++ "\np0: " ++ show p0 ++ "\np1: " ++ show p1 ++ "\np2: " ++ show p2 ++ "\np3: " ++ show p3) False = undefined
 
 
 --calculates the fitness of each genome in species
@@ -143,28 +127,33 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') wh
 --TODO copy best performing genome of species with > 5 genomes unaltered
 reproduce :: RandomGen g => g -> Float -> Float -> Int -> Population -> (Int,Population)
 reproduce gen wghtVsTop specThresh gInnov0 population = (gInnov'',population') where
-  (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + lengthNum gs)) (0.0,0.0) population --count population sum fitness and size (is size constant?)
-  prev_species = map (\(i0,_,_,_,gs) -> let (g',_) = randomElem gen gs in (i0,0,0,g',[])) population --pick random genome from prev generation
+  (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + lengthNum gs)) 
+                            (0.0,0.0) population --count population sum fitness and size (is size constant?)
+  prev_species = map (\(i0,_,_,g,gs) -> 
+                         let (g',_) = randomElem gen gs 
+                         in (i0,0,0,g',[])) 
+                     population --pick random genome from prev generation
   genomes = concat gss
   (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
                                 let num_offspring = round $ sum_f0 / p_sum_f * p_size
-                                    (gInnov',gs',_) = breedSpecies gInnov num_offspring (map snd $ gs0) (randomRs (0,0.999999999999) gen)
+                                    (gInnov',gs',_) = breedSpecies gInnov num_offspring (map snd $ gs0) rs
                                 in (gInnov',gs')) 
-                             gInnov0
-                             population
-  population' = speciefy wghtVsTop specThresh prev_species genomes
+                             gInnov0 population
+  population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
+  rs = randomRs (0,0.999999999) gen
 
 --divides a list of genomes into a list os species
 --requires a list of representative species from the last generation
 speciefy :: Float -> Float -> [Species] -> [Genome] -> [Species]
-speciefy _ _ _ [] = []
+speciefy _ _ species [] = species
 speciefy wghtVsTop specThresh species (g:gs)
-  | isNothing matchIx = speciefy wghtVsTop specThresh ((0,0,0,(0,g),[]):species) gs
-  | otherwise = speciefy wghtVsTop specThresh species' gs where
-  matchIx = findSpecies wghtVsTop specThresh g species
-  i = fromJust matchIx
-  (si,sm,ss,sg,sgs) = species !! i
-  species' = take i species ++ (si,sm,ss,sg,(0,g):sgs) : drop (i + 1) species
+  | isNothing matchIx = speciefy wghtVsTop specThresh ((0,0,0,(0,g),[(0,g)]):species) gs
+  | otherwise = speciefy wghtVsTop specThresh species' gs 
+  where
+    matchIx = findSpecies wghtVsTop specThresh g species
+    i = fromJust matchIx
+    (si,sm,ss,sg,sgs) = species !! i
+    species' = take i species ++ (si,sm,ss,sg,(0,g):sgs) : drop (i + 1) species
   
 findSpecies :: Float -> Float -> Genome -> [Species] -> Maybe Int
 findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,(_,repG),_) -> geneticDifference wghtVsTop repG g < specThresh)
@@ -174,21 +163,18 @@ findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,(_,repG),_) -> geneticDi
 --the least fit genomes from each species
 cull :: Int -> Int -> Population -> Population
 cull maxSize maxStag = map (cullSpecies maxSize) . filter (\(i,_,_,_,_) -> i < maxStag)
-  
 
+
+--removes species which no longer have any members
+cullEmpty :: [Species] -> [Species]
+cullEmpty = filter (\(_,_,_,_,gs) -> not $ null gs)
 
 -- is this done right ? the formula from the paper is
 -- delta = c1*E/N + c2*D/N + c3*W_bar 
 -- where E is number of excess genes, D is number of disjoint genes,
 -- N is number of genes in larger genome, and W_bar is the average weight
 -- differences of matching genes
--- previously  if
---      g1 = [1,2,3,4,5,8]
---      g2 = [1,2,3,4,5,6,7,9,10]
---      then g1 \\ g2 --> [8]
---      but we want disjoint + excess to be [6,7,8,9,10]
---      so union \\ intersection does the job, could probably be made more
---      effiecient
+--  union \\ intersection does the job, could probably be made efficienter
 geneticDifference :: Float -> Genome -> Genome -> Float
 geneticDifference wghtVsTop g1 g2 = excess_disjoint / num + wghtVsTop * (diff / fromIntegral (length genesBoth))
     where
