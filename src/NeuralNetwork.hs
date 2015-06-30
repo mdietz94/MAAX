@@ -48,7 +48,7 @@ makeClassy ''Config
 xorConfig = Config { _numInputs = 2
                    , _numOutputs = 1
                    , _populationSize = 10
-                   , _speciesMaxSize = 5
+                   , _speciesMaxSize = 10
                    , _stagnationMax = 15
                    , _speciationThreshold = 3.0
                    , _weightedVsTopology = 0.4
@@ -117,14 +117,13 @@ createPopulation rgen size num_in num_out = (length genes,[species]) where
 --number of generations to run
 run :: RandomGen g => g -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov !p0 n 
-  | trace ("n: " ++ show n ++ "\np0: " ++ show p0 ++ "\np1: " ++ show p1 ++ "\np2: " ++ show p2 ++ "\np3: " ++ show p3) False = undefined
-  | otherwise = run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
+run gen config fitnessFunc gInnov p0 n = run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
   where
     p1 = map (evalSpecies fitnessFunc) p0
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1
     (gInnov',p3) = reproduce gen (config ^. weightedVsTopology) (config ^. speciationThreshold) gInnov p2
 
+--  | trace ("n: " ++ show n ++ "\np0: " ++ show p0 ++ "\np1: " ++ show p1 ++ "\np2: " ++ show p2 ++ "\np3: " ++ show p3) False = undefined
 
 
 --calculates the fitness of each genome in species
@@ -209,6 +208,7 @@ breedSpecies gInnov n species rs = (gInnov'',newChild : otherChildren, rs'')
 
 -- breedChild requires that only genomes IN THE SAME SPECIES are passed
 breedChild :: Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
+breedChild _ [] _ = error "empty gs"
 breedChild gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
   where dad = getElementR gs r1
         mom = getElementR gs r2
@@ -261,7 +261,7 @@ evaluateGenome' maxLL numIn numOut inputs (Genome maxNode genes) = outs
         evaluateNode :: Int -> Int -> Float
         evaluateNode links n
           | links == 0 = 0.0
-          | n < numIn = safeIndex inputs n "evaluate node"
+          | n < numIn = inputs !! n
           | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
             where
                 evaluateGene :: Gene -> Float
@@ -270,15 +270,20 @@ evaluateGenome' maxLL numIn numOut inputs (Genome maxNode genes) = outs
                 isMyGene g = g^.enabled && g^.output == n
 
 addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addNode gInnov (Genome numnodes genes) (r:rs) = (gInnov+2,Genome (numnodes+1) genes', rs)
+addNode gInnov g0@(Genome numnodes genes) (r:rs) 
+  | null enabledGenes = (gInnov,g0,r:rs)
+  | otherwise = (gInnov+2,Genome (numnodes+1) genes', rs)
     where
-        rGene = getElementR (filter (^.enabled) genes) r
+        enabledGenes = filter (^.enabled) genes
+        rGene = getElementR enabledGenes r
         newGene1 = set innovation gInnov . set output numnodes $ rGene
         newGene2 = set innovation (gInnov+1) . set weight  1.0 .  set input numnodes $ rGene
         genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
 
 addLink :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addLink gInnov (Genome nodes genes) (r:(r1:rs)) = (gInnov+1,Genome nodes (newGene : genes), rs)
+addLink gInnov (Genome nodes genes) (r:(r1:rs)) 
+  | null disjointPairs = (gInnov,Genome nodes genes, r:r1:rs)
+  | otherwise = (gInnov+1,Genome nodes (newGene : genes), rs)
     where
         allPairs = [ (x,y) | x <- [0..nodes], y <- [0..nodes] ]
         gPairs = map (\g -> (g^.input,g^.output)) genes
@@ -287,15 +292,21 @@ addLink gInnov (Genome nodes genes) (r:(r1:rs)) = (gInnov+1,Genome nodes (newGen
         newGene = Gene inp out (r1 * 4.0 - 2.0) True gInnov
 
 disableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-disableGene gInnov (Genome nodes genes) (r:rs) = (gInnov, Genome nodes genes', rs)
+disableGene gInnov g0@(Genome nodes genes) (r:rs) 
+  | null enabledGenes = (gInnov,g0,r:rs)
+  | otherwise = (gInnov, Genome nodes genes', rs)
     where
-        rGene = getElementR (filter (^.enabled) genes) r
+        enabledGenes = filter (^.enabled) genes
+        rGene = getElementR enabledGenes r
         genes' = (enabled .~ False $ rGene) : delete rGene genes
 
 enableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-enableGene gInnov (Genome nodes genes) (r:rs) = (gInnov, Genome nodes genes', rs)
+enableGene gInnov g0@(Genome nodes genes) (r:rs) 
+  | null disabled = (gInnov, g0,r:rs)
+  | otherwise = (gInnov, Genome nodes genes', rs)
     where
-        rGene = getElementR (filter (not . (^.enabled)) genes) r
+        disabled = filter (not . (^.enabled)) genes
+        rGene = getElementR disabled r
         genes' = (enabled .~ True $ rGene) : delete rGene genes
 
 uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
@@ -333,7 +344,7 @@ sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 
 -- just gets an element, convenient for using randoms
 getElementR :: [a] -> Float -> a
-getElementR xs r = safeIndex xs (floor ( r * fromIntegral (length xs))) "getElementR"
+getElementR xs r = xs !! (floor ( r * fromIntegral (length xs)))
 
 maxFittestSpecies :: Population -> Species
 maxFittestSpecies = maximumBy (\(_,a,_,_,_) (_,b,_,_,_) -> compare a b)
@@ -358,10 +369,6 @@ mapT f (a,b) = (f a,f b)
 lengthNum :: Num b => [a] -> b
 lengthNum = fromIntegral . length
 
-safeIndex :: [a] -> Int -> String -> a
-safeIndex xs n msg
-  | n < 0 || n >= length xs = error $ "bad index: " ++ show (length xs) ++ " !! " ++ show n ++ "  " ++ msg
-  | otherwise = xs !! n
 
 --XOR code for testing neural network
 xor :: Float -> Float -> Float
