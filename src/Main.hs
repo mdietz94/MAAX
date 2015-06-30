@@ -15,7 +15,7 @@ main = do
     --print $ fittestGenome p
     let f = fitnessXor (config ^. maxLinkLength) (config ^. numInputs) (config ^. numOutputs)
     let p' = run (mkStdGen 0) config f gInnov p 30
-    let g = fittestGenome p'
+    let g0 = fittestGenome p'
     print $ length p'
-    print g
-    print $ f g
+    print g0
+    print $ f g0

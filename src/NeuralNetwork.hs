@@ -220,42 +220,12 @@ cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
   where sorted = sortBy (\(a,_) (b,_) -> compare a b) gs
         gs' = take numberToLeave sorted
 
--- the sum of the adjustedFitness
--- of a species determines
--- the number of offspring they will
--- have in the next generation
---adjustedFitness :: Genome -> Float -> Population -> Float
---adjustedFitness genome fitness population = fitness / modifier
---    where
---        modifier = sum $ map (sharing . geneticDifference genome) population
---        sharing x = if x < speciationThreshold then 1.0 else 0.0
-
--- greater than 0.5 and we press the button
--- output neurons must be in same order as
--- fromListJ expects
--- though obviously its random start so this
--- will always evolve to work
---maxLinkLength = 40 -- the max number to backjump, so we don't get stuck in loops
---evaluateGenome :: [Float] -> Genome -> Joystick
---evaluateGenome inputs (Genome maxNode genes) = fromListJ (map (>0.5) outs)
---    where
---        outs = map (evaluateNode maxLinkLength) [numInputs..numInputs+numOutputs]
---        evaluateNode :: Int -> Int -> Float
---        evaluateNode links n
---          | links == 0 = 0.0
---          | isInput n = inputs !! n
---          | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
---            where
---                evaluateGene :: Gene -> Float
---                evaluateGene g = g^.weight * evaluateNode (links-1) (g^.input)
---                isMyGene :: Gene -> Bool
---                isMyGene g = g^.enabled && g^.output == n
 
 --a more general evalute genome?
 evaluateGenome' :: Int -> Int -> Int -> [Float] -> Genome -> [Float]
 evaluateGenome' maxLL numIn numOut inputs (Genome maxNode genes) = outs
     where
-        outs = map (evaluateNode maxLL) [numIn..numIn + numOut]
+        outs = map (evaluateNode maxLL) [numIn..numIn + numOut - 1]
         evaluateNode :: Int -> Int -> Float
         evaluateNode links n
           | links == 0 = 0.0
