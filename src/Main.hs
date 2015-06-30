@@ -17,4 +17,5 @@ main = do
     let p' = run (mkStdGen 0) config f gInnov p 30
     let g = fittestGenome p'
     print $ length p'
+    print g
     print $ f g

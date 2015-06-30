@@ -9,8 +9,6 @@ import Data.List
 import Data.Maybe
 import Control.Lens
 import Control.Arrow ((&&&))
-import Control.Applicative ((<*>))
-import Data.Functor ((<$>))
 import Debug.Trace
 
 
@@ -61,18 +59,22 @@ data Gene = Gene { _input      :: Int
                  , _output     :: Int
                  , _weight     :: Float
                  , _enabled    :: Bool
-                 , _innovation :: Int } deriving (Show, Read, Eq)
+                 , _innovation :: Int } deriving (Eq)
 makeClassy ''Gene
 
 data Genome = Genome { _numnodes :: Int
                      , _genes :: [Gene]
-                     } deriving (Read, Eq)
+                     } deriving (Eq)
 makeClassy ''Genome
 
 instance Show Genome where
     show (Genome n gs) = "Genome[" ++ show n ++ "]{" ++ 
                          concat (map (\g -> "\n" ++ show g) gs) ++ "\n}"
 
+instance Show Gene where
+    show (Gene inp out wt e i) 
+      | e = "[x]" ++ show i ++ ": " ++ show inp ++ "---" ++ show wt ++ "---" ++ show out
+      | otherwise = "[ ]" ++ show i
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
 
@@ -103,6 +105,10 @@ createPopulation rgen size num_in num_out = (length genes,[species]) where
 
 --random generator, function from genome to a fitness, population, max
 --number of generations to run
+--run calculates the fitness of each genome in the population, then removes
+--genomes from the population if their species has stagnated or if their
+--species exceed the max size and they are least fit of their species, then
+--produces the next generation of genomes and recurses with it
 run :: RandomGen g => g -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
 run gen config fitnessFunc gInnov p0 n = run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
@@ -309,8 +315,8 @@ mutate :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate gInnov genome (r:rs)
   | r < 0.1 = uncurry3 mutate $ addLink gInnov genome rs
   | r < 0.15 = uncurry3 mutate $  addNode gInnov genome rs
-  | r < 0.35 = uncurry3 mutate $ disableGene gInnov genome rs
-  | r < 0.6 = uncurry3 mutate $ enableGene gInnov genome rs
+  | r < 0.25 = uncurry3 mutate $ disableGene gInnov genome rs
+  | r < 0.5 = uncurry3 mutate $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
     where
         perturbWeights :: Genome -> [Float] -> Genome
@@ -379,7 +385,15 @@ outputs = map (foldl1' xor) inputs
 - is subtracted from four so that higher fitness reflect better
 - network structure. The result is squared to give proportionally more
 - fitness the closer the network is to a solution
+-        (4 - sum (zipWith (-) outputs genome_outs)) ^ 2
+- TODO this doesn't make sense to me, if I'm interpreting this formula
+- correctly then the fitness of the following outputs are:
+-   correct  [0,1,1,0] --> 16
+-   wrong    [0,1,0,1] --> 16
+-   wronger  [1,0,0,1] --> 16
+-   wrongest [9,9,9,9] --> 1440
+- SO the problem is that our nodes aren't restricted to the range [0,1]
 -}
 fitnessXor :: Int -> Int -> Int -> Genome -> Float
 fitnessXor maxLL numIn numOut g = let genome_outs = concat $ map (flip (evaluateGenome' maxLL numIn numOut) g) inputs
-                            in (4 - sum ((-) <$> outputs <*> genome_outs)) ^ 2
+                            in (4 - sum (zipWith (-) outputs genome_outs)) ^ 2
