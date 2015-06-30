@@ -42,8 +42,7 @@ xorConfig = Config { _numInputs = 2
 -- TODO:
 --
 -- add the ability to add biases to the netork
--- population size decreases
--- lots of genes end up being disabled
+-- population size changes
 --
 -- Mutation rates:
 -- 80% of weight mutation
@@ -73,7 +72,7 @@ instance Show Genome where
 
 instance Show Gene where
     show (Gene inp out wt e i) 
-      | e = "[x]" ++ show i ++ ": " ++ show inp ++ "---" ++ show wt ++ "---" ++ show out
+      | e = "[x]" ++ show i ++ ": " ++ show inp ++ "-->" ++ show wt ++ "-->" ++ show out
       | otherwise = "[ ]" ++ show i
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
@@ -145,7 +144,7 @@ reproduce gen config gInnov0 population = (gInnov'',population') where
   genomes = concat gss
   (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
                                 let num_offspring = round $ sum_f0 / p_sum_f * p_size
-                                    (gInnov',gs',_) = breedSpecies gInnov num_offspring (map snd $ gs0) rs
+                                    (gInnov',gs',_) = breedSpecies config gInnov num_offspring (map snd $ gs0) rs
                                 in (gInnov',gs')) 
                              gInnov0 population
   population' = trace (show (length genomes)) $ cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
@@ -197,22 +196,22 @@ geneticDifference wghtVsTop g1 g2 = excess_disjoint / num + wghtVsTop * (diff / 
         diff = sum $ map (\(a,b) -> abs $ a^.weight - b^.weight) genesBoth
         num = fromIntegral $ max (g1^.genes.to length) (g2^.genes.to length)
 
-breedSpecies :: Int -> Int -> [Genome] -> [Float] -> (Int,[Genome],[Float])
-breedSpecies gInnov 0 species rs = (gInnov,[],rs)
-breedSpecies gInnov n species rs = (gInnov'',newChild : otherChildren, rs'')
+breedSpecies :: Config -> Int -> Int -> [Genome] -> [Float] -> (Int,[Genome],[Float])
+breedSpecies _ gInnov 0 species rs = (gInnov,[],rs)
+breedSpecies config gInnov n species rs = (gInnov'',newChild : otherChildren, rs'')
     where
-        (gInnov',newChild,rs') = breedChild gInnov species rs
-        (gInnov'',otherChildren, rs'') = breedSpecies gInnov' (n-1) species rs'
+        (gInnov',newChild,rs') = breedChild config gInnov species rs
+        (gInnov'',otherChildren, rs'') = breedSpecies config gInnov' (n-1) species rs'
 
 -- breedChild requires that only genomes IN THE SAME SPECIES are passed
-breedChild :: Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
-breedChild _ [] _ = error "empty gs"
-breedChild gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
+breedChild :: Config -> Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
+breedChild _ _ [] _ = error "empty gs"
+breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
   where dad = getElementR gs r1
         mom = getElementR gs r2
         (child,rs') | r < 0.7 = crossover dad mom rs
                     | otherwise = (getElementR gs r1, r2:rs)
-        (gInnov',monster,rs'') = mutate gInnov child rs'
+        (gInnov',monster,rs'') = mutate config gInnov child rs'
             
 
 cullSpecies :: Int -> Species-> Species
@@ -222,8 +221,8 @@ cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
 
 
 --a more general evalute genome?
-evaluateGenome' :: Int -> Int -> Int -> [Float] -> Genome -> [Float]
-evaluateGenome' maxLL numIn numOut inputs (Genome maxNode genes) = outs
+evaluateGenome :: Int -> Int -> Int -> [Float] -> Genome -> [Float]
+evaluateGenome maxLL numIn numOut inputs (Genome maxNode genes) = outs
     where
         outs = map (evaluateNode maxLL) [numIn..numIn + numOut - 1]
         evaluateNode :: Int -> Int -> Float
@@ -248,12 +247,15 @@ addNode gInnov g0@(Genome numnodes genes) (r:rs)
         newGene2 = set innovation (gInnov+1) . set weight  1.0 .  set input numnodes $ rGene
         genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
 
-addLink :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addLink gInnov (Genome nodes genes) (r:(r1:rs)) 
+addLink :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
+addLink config gInnov (Genome nodes genes) (r:(r1:rs)) 
   | null disjointPairs = (gInnov,Genome nodes genes, r:r1:rs)
   | otherwise = (gInnov+1,Genome nodes (newGene : genes), rs)
     where
-        allPairs = [ (x,y) | x <- [0..nodes], y <- [0..nodes] ]
+        inputMax = (config^.numInputs) - 1
+        outputMax = inputMax + (config^.numOutputs)
+        allPairs = [ (x,y) | x <- [0 .. inputMax] ++ [outputMax + 1 .. nodes]
+                           , y <- [inputMax + 1 .. nodes] ]
         gPairs = map (\g -> (g^.input,g^.output)) genes
         disjointPairs = allPairs \\ gPairs
         (inp,out) = getElementR disjointPairs r
@@ -281,12 +283,12 @@ uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
 uncurry3 f (a,b,c) = f a b c
 
 -- should mess with these rates of mutation...
-mutate :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-mutate gInnov genome (r:rs)
-  | r < 0.1 = uncurry3 mutate $ addLink gInnov genome rs
-  | r < 0.15 = uncurry3 mutate $  addNode gInnov genome rs
-  | r < 0.25 = uncurry3 mutate $ disableGene gInnov genome rs
-  | r < 0.5 = uncurry3 mutate $ enableGene gInnov genome rs
+mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
+mutate config gInnov genome (r:rs)
+  | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
+  | r < 0.15 = uncurry3 (mutate config) $  addNode gInnov genome rs
+  | r < 0.25 = uncurry3 (mutate config) $ disableGene gInnov genome rs
+  | r < 0.5 = uncurry3 (mutate config) $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
     where
         perturbWeights :: Genome -> [Float] -> Genome
@@ -365,5 +367,5 @@ outputs = map (foldl1' xor) inputs
 - SO the problem is that our nodes aren't restricted to the range [0,1]
 -}
 fitnessXor :: Int -> Int -> Int -> Genome -> Float
-fitnessXor maxLL numIn numOut g = let genome_outs = concat $ map (flip (evaluateGenome' maxLL numIn numOut) g) inputs
+fitnessXor maxLL numIn numOut g = let genome_outs = concat $ map (flip (evaluateGenome maxLL numIn numOut) g) inputs
                             in (4 - sum (zipWith (-) outputs genome_outs)) ^ 2
