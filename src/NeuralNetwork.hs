@@ -30,8 +30,8 @@ makeClassy ''Config
 
 xorConfig = Config { _numInputs = 2
                    , _numOutputs = 1
-                   , _populationSize = 10
-                   , _speciesMaxSize = 10
+                   , _populationSize = 100
+                   , _speciesMaxSize = 20
                    , _stagnationMax = 15
                    , _speciationThreshold = 3.0    -- this was 4.0 for DPLV (HARD Problem)
                    , _weightedVsTopology = 0.4
@@ -42,6 +42,10 @@ xorConfig = Config { _numInputs = 2
                    }
 
 -- TODO:
+--
+-- add the ability to add biases to the netork
+-- population size decreases
+-- lots of genes end up being disabled
 --
 -- Mutation rates:
 -- 80% of weight mutation
@@ -303,7 +307,7 @@ mutate :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate gInnov genome (r:rs)
   | r < 0.1 = uncurry3 mutate $ addLink gInnov genome rs
   | r < 0.15 = uncurry3 mutate $  addNode gInnov genome rs
-  | r < 0.45 = uncurry3 mutate $ disableGene gInnov genome rs
+  | r < 0.35 = uncurry3 mutate $ disableGene gInnov genome rs
   | r < 0.6 = uncurry3 mutate $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
     where

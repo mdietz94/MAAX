@@ -11,8 +11,9 @@ import qualified Data.ByteString as B (writeFile)
 main :: IO ()
 main = do
     let config = xorConfig
-    let (gInnov,p) = createPopulation (mkStdGen 0) 10 2 1
+    let (gInnov,p) = createPopulation (mkStdGen 0) (config^.populationSize) (config^.numInputs) (config^.numOutputs)
     --print $ fittestGenome p
-    let p' = run (mkStdGen 0) config (fitnessXor (config ^. maxLinkLength) (config ^. numInputs) (config ^. numOutputs)) gInnov p 3
-    --print $ fittestGenome p'
-    print p'
+    let f = fitnessXor (config ^. maxLinkLength) (config ^. numInputs) (config ^. numOutputs)
+    let p' = run (mkStdGen 0) config f gInnov p 30
+    let g = fittestGenome p'
+    print $ f g
