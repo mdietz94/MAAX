@@ -149,7 +149,7 @@ reproduce gen wghtVsTop specThresh gInnov0 population = (gInnov'',population') w
   genomes = concat gss
   (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
                                 let num_offspring = round $ sum_f0 / p_sum_f * p_size
-                                    (gInnov',gs',_) = breedSpecies gInnov num_offspring (map snd $ gs0) (randomRs (0,1) gen)
+                                    (gInnov',gs',_) = breedSpecies gInnov num_offspring (map snd $ gs0) (randomRs (0,0.999999999999) gen)
                                 in (gInnov',gs')) 
                              gInnov0
                              population
@@ -261,7 +261,7 @@ evaluateGenome' maxLL numIn numOut inputs (Genome maxNode genes) = outs
         evaluateNode :: Int -> Int -> Float
         evaluateNode links n
           | links == 0 = 0.0
-          | n < numIn = inputs !! n
+          | n < numIn = safeIndex inputs n "evaluate node"
           | otherwise = sigmoid . sum . map evaluateGene . filter isMyGene $ genes
             where
                 evaluateGene :: Gene -> Float
@@ -333,9 +333,7 @@ sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 
 -- just gets an element, convenient for using randoms
 getElementR :: [a] -> Float -> a
-getElementR xs r 
-  | r >= fromIntegral (length xs) = error "r too big"
-  | otherwise = xs !! floor ( r * fromIntegral (length xs))
+getElementR xs r = safeIndex xs (floor ( r * fromIntegral (length xs))) "getElementR"
 
 maxFittestSpecies :: Population -> Species
 maxFittestSpecies = maximumBy (\(_,a,_,_,_) (_,b,_,_,_) -> compare a b)
@@ -348,8 +346,10 @@ fittestGenome [] = error "empty population"
 fittestGenome p = maxFittestGenome . maxFittestSpecies $ p
 
 randomElem :: RandomGen g => g -> [a] -> (a,g)
-randomElem gen xs = (xs !! i,gen') where
-  (i,gen') = randomR (0,length xs - 1) gen
+randomElem gen xs 
+  | i < 0 || i >= length xs = error "random elem"
+  | otherwise = (xs !! i,gen') 
+  where (i,gen') = randomR (0,length xs - 1) gen
 
 
 mapT :: (a -> b) -> (a,a) -> (b,b)
@@ -358,6 +358,10 @@ mapT f (a,b) = (f a,f b)
 lengthNum :: Num b => [a] -> b
 lengthNum = fromIntegral . length
 
+safeIndex :: [a] -> Int -> String -> a
+safeIndex xs n msg
+  | n < 0 || n >= length xs = error $ "bad index: " ++ show (length xs) ++ " !! " ++ show n ++ "  " ++ msg
+  | otherwise = xs !! n
 
 --XOR code for testing neural network
 xor :: Float -> Float -> Float
