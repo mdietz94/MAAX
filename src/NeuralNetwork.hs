@@ -110,7 +110,7 @@ run gen config fitnessFunc gInnov p0 n = run (snd $ next gen) config fitnessFunc
     p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1
-    (gInnov',p3) = reproduce gen (config ^. weightedVsTopology) (config ^. speciationThreshold) gInnov p2
+    (gInnov',p3) = reproduce gen config gInnov p2
 
 
 
@@ -129,10 +129,9 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') wh
 
 --produces the next generation of genomes
 --TODO copy best performing genome of species with > 5 genomes unaltered
-reproduce :: RandomGen g => g -> Float -> Float -> Int -> Population -> (Int,Population)
-reproduce gen wghtVsTop specThresh gInnov0 population = (gInnov'',population') where
-  (p_sum_f,p_size) = foldl' (\(a,b) (_,_,f,_,gs) -> (a + f,b + lengthNum gs)) 
-                            (0.0,0.0) population --count population sum fitness and size (is size constant?)
+reproduce :: RandomGen g => g -> Config -> Int -> Population -> (Int,Population)
+reproduce gen config gInnov0 population = (gInnov'',population') where
+  p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
   prev_species = map (\(i0,_,_,g,gs) -> 
                          let (g',_) = randomElem gen gs 
                          in (i0,0,0,g',[])) 
@@ -143,8 +142,11 @@ reproduce gen wghtVsTop specThresh gInnov0 population = (gInnov'',population') w
                                     (gInnov',gs',_) = breedSpecies gInnov num_offspring (map snd $ gs0) rs
                                 in (gInnov',gs')) 
                              gInnov0 population
-  population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
+  population' = trace (show (length genomes)) $ cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
   rs = randomRs (0,0.999999999) gen
+  wghtVsTop = config^.weightedVsTopology
+  specThresh = config^.speciationThreshold
+  p_size = fromIntegral $ config^.populationSize
 
 --divides a list of genomes into a list os species
 --requires a list of representative species from the last generation
