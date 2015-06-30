@@ -23,8 +23,17 @@ data Config = Config { _numInputs            :: Int
                      , _smallScale           :: Float
                      , _largeScale           :: Float
                      , _maxLinkLength         :: Int
-                     } deriving (Show, Eq, Read)
+                     , _sigmoidFunction      :: Float -> Float
+                     }
 makeClassy ''Config
+
+-- sigmoid step function
+sigmoid :: Float -> Float
+sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
+sigmoidXor :: Float -> Float
+sigmoidXor x = exp x / (1 + exp x)
+sigmoidXor2 :: Float -> Float
+sigmoidXor2 x = 1 / (1 + exp (0 - x))
 
 xorConfig = Config { _numInputs = 2
                    , _numOutputs = 1
@@ -37,12 +46,15 @@ xorConfig = Config { _numInputs = 2
                    , _smallScale = 0.2
                    , _largeScale = 2.0
                    , _maxLinkLength = 4
+                   , _sigmoidFunction = sigmoid
                    }
 
 -- TODO:
 --
 -- add the ability to add biases to the netork
 -- population size changes
+-- sometimes networks have no connections to output node or no
+-- connections from input node
 --
 -- Mutation rates:
 -- 80% of weight mutation
@@ -72,7 +84,7 @@ instance Show Genome where
 
 instance Show Gene where
     show (Gene inp out wt e i) 
-      | e = "[x]" ++ show i ++ ": " ++ show inp ++ "-->" ++ show wt ++ "-->" ++ show out
+      | e = "[x]" ++ show i ++ ": " ++ show inp ++ " --> " ++ show wt ++ " --> " ++ show out
       | otherwise = "[ ]" ++ show i
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
@@ -221,9 +233,13 @@ cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
 
 
 --a more general evalute genome?
-evaluateGenome :: Int -> Int -> Int -> [Float] -> Genome -> [Float]
-evaluateGenome maxLL numIn numOut inputs (Genome maxNode genes) = outs
+evaluateGenome :: Config -> [Float] -> Genome -> [Float]
+evaluateGenome config inputs (Genome maxNode genes) = outs
     where
+        maxLL = config^.maxLinkLength
+        numIn = config^.numInputs
+        numOut = config^.numOutputs
+        sigmoid = config^.sigmoidFunction
         outs = map (evaluateNode maxLL) [numIn..numIn + numOut - 1]
         evaluateNode :: Int -> Int -> Float
         evaluateNode links n
@@ -308,9 +324,6 @@ crossover genome1 genome2 rs = (genes .~ genes2 ++ genes1 $ genome1, drop (genom
         genes2 = map snd . filter (\(r,g)->  r < 0.5 && g^.innovation `elem` innovationNums) . zip rs $ genome2^.genes
         genes1 = deleteFirstsBy (\a b -> a^.innovation == b^.innovation) (genome1^.genes) genes2
 
--- sigmoid step function
-sigmoid :: Float -> Float
-sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 
 -- just gets an element, convenient for using randoms
 getElementR :: [a] -> Float -> a
@@ -365,7 +378,10 @@ outputs = map (foldl1' xor) inputs
 -   wronger  [1,0,0,1] --> 16
 -   wrongest [9,9,9,9] --> 1440
 - SO the problem is that our nodes aren't restricted to the range [0,1]
+- also I think changing it to the absolute value of the difference would
+- improve because then
+-   [0,1,0,1] would not be equal to [0,1,1,0]
 -}
-fitnessXor :: Int -> Int -> Int -> Genome -> Float
-fitnessXor maxLL numIn numOut g = let genome_outs = concat $ map (flip (evaluateGenome maxLL numIn numOut) g) inputs
-                            in (4 - sum (zipWith (-) outputs genome_outs)) ^ 2
+fitnessXor :: Config -> Genome -> Float
+fitnessXor config g = let genome_outs = concat $ map (flip (evaluateGenome config) g) inputs
+                      in (4 - sum (zipWith (-) outputs genome_outs)) ^ 2
