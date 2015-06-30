@@ -45,18 +45,18 @@ data Config = Config { _numInputs            :: Int
                      } deriving (Show, Eq, Read)
 makeClassy ''Config
 
-defaultConfig = Config { _numInputs = 8
-                       , _numOutputs = 6
-                       , _populationSize = 200
-                       , _speciesMaxSize = 100
-                       , _stagnationMax = 15
-                       , _speciationThreshold = 3.0
-                       , _weightedVsTopology = 0.4
-                       , _crossoverChance = 0.7
-                       , _smallScale = 0.2
-                       , _largeScale = 2.0
-                       , _maxLinkLength = 40
-                       }
+xorConfig = Config { _numInputs = 2
+                   , _numOutputs = 1
+                   , _populationSize = 10
+                   , _speciesMaxSize = 5
+                   , _stagnationMax = 15
+                   , _speciationThreshold = 3.0
+                   , _weightedVsTopology = 0.4
+                   , _crossoverChance = 0.7
+                   , _smallScale = 0.2
+                   , _largeScale = 2.0
+                   , _maxLinkLength = 4
+                   }
 
 -- TODO:
 --
@@ -333,7 +333,9 @@ sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 
 -- just gets an element, convenient for using randoms
 getElementR :: [a] -> Float -> a
-getElementR xs r = xs !! floor ( r * fromIntegral (length xs))
+getElementR xs r 
+  | r >= fromIntegral (length xs) = error "r too big"
+  | otherwise = xs !! floor ( r * fromIntegral (length xs))
 
 maxFittestSpecies :: Population -> Species
 maxFittestSpecies = maximumBy (\(_,a,_,_,_) (_,b,_,_,_) -> compare a b)

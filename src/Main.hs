@@ -10,7 +10,7 @@ import qualified Data.ByteString as B (writeFile)
 
 main :: IO ()
 main = do
-    let config = defaultConfig
+    let config = xorConfig
     let (gInnov,p) = createPopulation (mkStdGen 0) 10 2 1
     print $ fittestGenome p
     print p
