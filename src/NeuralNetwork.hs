@@ -109,7 +109,7 @@ initPopulation rgen config = (length genes,[species]) where
   out_max = in_max + config^.numOutputs
   species = (0,0.0,0.0,(0.0,genome),genomes)
   genomes = zip (repeat 0) (replicate size genome)
-  genome = Genome (length genes) genes
+  genome = Genome (out_max + 1) genes
   genes = zipWith3 (\g w i -> set weight w (set innovation i g))
                    g0s (randomRs (0,1) rgen) [0..]
   g0s = [ Gene inN outN 0 True 0 | inN <- [0 .. in_max] 
@@ -164,7 +164,7 @@ reproduce gen config gInnov0 population = (gInnov'',population') where
                                     (gs0',stud) | len > 5 = splitAt (len - 1) gs0 --don't breed the stud
                                                 | otherwise = (gs0,[])
                                     (gInnov',gs',_) = breedSpecies config gInnov num_offspring (map snd gs0') rs
-                                in (gInnov',map snd stud ++ gs')) 
+                                in (gInnov',gs' ++ map snd stud)) 
                              gInnov0 population
   population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
   rs = randomRs (0,0.999999999) gen
@@ -312,7 +312,7 @@ mutate config gInnov genome (r:rs)
   | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
   | r < 0.2 = uncurry3 (mutate config) $  addNode gInnov genome rs
   | r < 0.3 = uncurry3 (mutate config) $ disableGene gInnov genome rs
-  | r < 0.4 = uncurry3 (mutate config) $ enableGene gInnov genome rs
+  | r < 0.5 = uncurry3 (mutate config) $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
     where
         perturbWeights :: Genome -> [Float] -> Genome
