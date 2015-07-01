@@ -33,8 +33,8 @@ executable MAAX
   default-language:    Haskell2010
   extra-lib-dirs:      ./tom7
   extra-libraries: emulator
-  ghc-options:
-     -threaded
+  ghc-options: -O3
+    --  -threaded
     -- -fprof-auto
     -- -rtsopts
     -- "-with-rtsopts=-N -p -s -h -i0.1"

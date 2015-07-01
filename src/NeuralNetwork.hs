@@ -15,14 +15,14 @@ import Debug.Trace
 data Config = Config { _numInputs            :: Int
                      , _numOutputs           :: Int
                      , _populationSize       :: Int
-                     , _speciesMaxSize      :: Int
+                     , _speciesMaxSize       :: Int
                      , _stagnationMax        :: Int
                      , _speciationThreshold  :: Float
-                     , _weightedVsTopology    :: Float
+                     , _weightedVsTopology   :: Float
                      , _crossoverChance      :: Float
                      , _smallScale           :: Float
                      , _largeScale           :: Float
-                     , _maxLinkLength         :: Int
+                     , _maxLinkLength        :: Int
                      , _sigmoidFunction      :: Float -> Float
                      }
 makeClassy ''Config
@@ -45,8 +45,8 @@ xorConfig = Config { _numInputs = 2
                    , _crossoverChance = 0.7
                    , _smallScale = 0.2
                    , _largeScale = 2.0
-                   , _maxLinkLength = 4
-                   , _sigmoidFunction = sigmoid
+                   , _maxLinkLength = 10
+                   , _sigmoidFunction = sigmoidXor
                    }
 
 -- TODO:
@@ -102,15 +102,18 @@ type Species = ( Int                 --stagnation
 --creates initial population
 --random generator, intial size, num inputs, num outputs
 --TODO add biases
-createPopulation :: RandomGen g => g -> Int -> Int -> Int -> (Int,Population)
-createPopulation rgen size num_in num_out = (length genes,[species]) where
+initPopulation :: RandomGen g => g -> Config -> (Int,Population)
+initPopulation rgen config = (length genes,[species]) where
+  size = config^.populationSize
+  in_max= config^.numInputs - 1
+  out_max = in_max + config^.numOutputs
   species = (0,0.0,0.0,(0.0,genome),genomes)
   genomes = zip (repeat 0) (replicate size genome)
   genome = Genome (length genes) genes
   genes = zipWith3 (\g w i -> set weight w (set innovation i g))
                    g0s (randomRs (0,1) rgen) [0..]
-  g0s = [ Gene inN outN 0 True 0 | inN <- [1 .. num_in] 
-                                 , outN <- [1 .. num_out] ]
+  g0s = [ Gene inN outN 0 True 0 | inN <- [0 .. in_max] 
+                                 , outN <- [in_max + 1 .. out_max] ]
   
 
 
@@ -126,7 +129,8 @@ run gen config fitnessFunc gInnov p0 n = run (snd $ next gen) config fitnessFunc
   where
     p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
-    p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1
+    p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\(a,_) (b,_) -> compare a b) gs)) p1
+    p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
     (gInnov',p3) = reproduce gen config gInnov p2
 
 
@@ -145,7 +149,7 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') wh
 
 
 --produces the next generation of genomes
---TODO copy best performing genome of species with > 5 genomes unaltered
+--assumes the list of genomes is sort in ascending order by fitness
 reproduce :: RandomGen g => g -> Config -> Int -> Population -> (Int,Population)
 reproduce gen config gInnov0 population = (gInnov'',population') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
@@ -156,10 +160,13 @@ reproduce gen config gInnov0 population = (gInnov'',population') where
   genomes = concat gss
   (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
                                 let num_offspring = round $ sum_f0 / p_sum_f * p_size
-                                    (gInnov',gs',_) = breedSpecies config gInnov num_offspring (map snd $ gs0) rs
-                                in (gInnov',gs')) 
+                                    len = length gs0
+                                    (gs0',stud) | len > 5 = splitAt (len - 1) gs0 --don't breed the stud
+                                                | otherwise = (gs0,[])
+                                    (gInnov',gs',_) = breedSpecies config gInnov num_offspring (map snd gs0') rs
+                                in (gInnov',map snd stud ++ gs')) 
                              gInnov0 population
-  population' = trace (show (length genomes)) $ cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
+  population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
   rs = randomRs (0,0.999999999) gen
   wghtVsTop = config^.weightedVsTopology
   specThresh = config^.speciationThreshold
@@ -184,6 +191,7 @@ findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,(_,repG),_) -> geneticDi
 
 --removes species whos fitness has stagnated and removes
 --the least fit genomes from each species
+--assumes genomes are sorted in ascending order by fitness
 cull :: Int -> Int -> Population -> Population
 cull maxSize maxStag = map (cullSpecies maxSize) . filter (\(i,_,_,_,_) -> i < maxStag)
 
@@ -302,9 +310,9 @@ uncurry3 f (a,b,c) = f a b c
 mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate config gInnov genome (r:rs)
   | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
-  | r < 0.15 = uncurry3 (mutate config) $  addNode gInnov genome rs
-  | r < 0.25 = uncurry3 (mutate config) $ disableGene gInnov genome rs
-  | r < 0.5 = uncurry3 (mutate config) $ enableGene gInnov genome rs
+  | r < 0.2 = uncurry3 (mutate config) $  addNode gInnov genome rs
+  | r < 0.3 = uncurry3 (mutate config) $ disableGene gInnov genome rs
+  | r < 0.4 = uncurry3 (mutate config) $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
     where
         perturbWeights :: Genome -> [Float] -> Genome
@@ -370,17 +378,6 @@ outputs = map (foldl1' xor) inputs
 - is subtracted from four so that higher fitness reflect better
 - network structure. The result is squared to give proportionally more
 - fitness the closer the network is to a solution
--        (4 - sum (zipWith (-) outputs genome_outs)) ^ 2
-- TODO this doesn't make sense to me, if I'm interpreting this formula
-- correctly then the fitness of the following outputs are:
--   correct  [0,1,1,0] --> 16
--   wrong    [0,1,0,1] --> 16
--   wronger  [1,0,0,1] --> 16
--   wrongest [9,9,9,9] --> 1440
-- SO the problem is that our nodes aren't restricted to the range [0,1]
-- also I think changing it to the absolute value of the difference would
-- improve because then
--   [0,1,0,1] would not be equal to [0,1,1,0]
 -}
 fitnessXor :: Config -> Genome -> Float
 fitnessXor config g = let genome_outs = concat $ map (flip (evaluateGenome config) g) inputs
