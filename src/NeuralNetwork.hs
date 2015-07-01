@@ -37,8 +37,8 @@ sigmoidXor2 x = 1 / (1 + exp (0 - x))
 
 xorConfig = Config { _numInputs = 2
                    , _numOutputs = 1
-                   , _populationSize = 100
-                   , _speciesMaxSize = 20
+                   , _populationSize = 10
+                   , _speciesMaxSize = 5
                    , _stagnationMax = 15
                    , _speciationThreshold = 3.0    -- this was 4.0 for DPLV (HARD Problem)
                    , _weightedVsTopology = 0.4
@@ -49,13 +49,6 @@ xorConfig = Config { _numInputs = 2
                    , _sigmoidFunction = sigmoidXor
                    }
 
--- TODO:
---
--- add the ability to add biases to the netork
--- population size changes
--- sometimes networks have no connections to output node or no
--- connections from input node
---
 -- Mutation rates:
 -- 80% of weight mutation
 --     90% being perturbed
@@ -125,8 +118,9 @@ initPopulation rgen config = (length genes,[species]) where
 --produces the next generation of genomes and recurses with it
 run :: RandomGen g => g -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov p0 n = run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
+run gen config fitnessFunc gInnov p0 n = trace (show (fitnessFunc fittest) ++ "\n" ++ show fittest) $ run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
   where
+    fittest = fittestGenome p3
     p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
     p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\(a,_) (b,_) -> compare a b) gs)) p1
@@ -161,10 +155,10 @@ reproduce gen config gInnov0 population = (gInnov'',population') where
   (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
                                 let num_offspring = round $ sum_f0 / p_sum_f * p_size
                                     len = length gs0
-                                    (gs0',stud) | len > 5 = splitAt (len - 1) gs0 --don't breed the stud
-                                                | otherwise = (gs0,[])
-                                    (gInnov',gs',_) = breedSpecies config gInnov num_offspring (map snd gs0') rs
-                                in (gInnov',gs' ++ map snd stud)) 
+                                    stud | len > 5 = [snd $ last gs0]
+                                         | otherwise = []
+                                    (gInnov',gs',_) = breedSpecies config gInnov num_offspring (map snd gs0) rs
+                                in (gInnov',gs' ++ stud)) 
                              gInnov0 population
   population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
   rs = randomRs (0,0.999999999) gen
@@ -216,6 +210,7 @@ geneticDifference wghtVsTop g1 g2 = excess_disjoint / num + wghtVsTop * (diff / 
         diff = sum $ map (\(a,b) -> abs $ a^.weight - b^.weight) genesBoth
         num = fromIntegral $ max (g1^.genes.to length) (g2^.genes.to length)
 
+--assumes list of genomes is sorted in ascending order of fitness
 breedSpecies :: Config -> Int -> Int -> [Genome] -> [Float] -> (Int,[Genome],[Float])
 breedSpecies _ gInnov 0 species rs = (gInnov,[],rs)
 breedSpecies config gInnov n species rs = (gInnov'',newChild : otherChildren, rs'')
@@ -224,12 +219,15 @@ breedSpecies config gInnov n species rs = (gInnov'',newChild : otherChildren, rs
         (gInnov'',otherChildren, rs'') = breedSpecies config gInnov' (n-1) species rs'
 
 -- breedChild requires that only genomes IN THE SAME SPECIES are passed
+-- assumes list of genomes is sorted in ascending order of fitness
 breedChild :: Config -> Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
 breedChild _ _ [] _ = error "empty gs"
 breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
-  where dad = getElementR gs r1
-        mom = getElementR gs r2
-        (child,rs') | r < 0.7 = crossover dad mom rs
+  where (r1',r2') | r1 >= r2 = (r1,r2) 
+                  | otherwise = (r2,r1)
+        mom = getElementR gs r1' --make sure mom is fitter than dad
+        dad = getElementR gs r2'
+        (child,rs') | r < 0.7 = crossover mom dad rs
                     | otherwise = (getElementR gs r1, r2:rs)
         (gInnov',monster,rs'') = mutate config gInnov child rs'
             
@@ -310,7 +308,7 @@ uncurry3 f (a,b,c) = f a b c
 mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate config gInnov genome (r:rs)
   | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
-  | r < 0.2 = uncurry3 (mutate config) $  addNode gInnov genome rs
+  | r < 0.2 = uncurry3 (mutate config) $ addNode gInnov genome rs
   | r < 0.3 = uncurry3 (mutate config) $ disableGene gInnov genome rs
   | r < 0.5 = uncurry3 (mutate config) $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
