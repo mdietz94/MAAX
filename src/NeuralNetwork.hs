@@ -384,4 +384,4 @@ outputs = map (foldl1' xor) inputs
 -}
 fitnessXor :: Config -> Genome -> Float
 fitnessXor config g = let genome_outs = concat $ map (flip (evaluateGenome config) g) inputs
-                      in (4 - sum (zipWith (-) outputs genome_outs)) ^ 2
+                      in (4 - sum (map abs (zipWith (-) outputs genome_outs))) ^ 2
