@@ -34,19 +34,19 @@ sigmoidXor :: Float -> Float
 sigmoidXor x = exp x / (1 + exp x)
 sigmoidXor2 :: Float -> Float
 sigmoidXor2 x = 1 / (1 + exp (0 - x))
-
-xorConfig = Config { _numInputs = 2
+-- TODO: IMPLEMENT STAGNATION!
+xorConfig = Config { _numInputs = 3
                    , _numOutputs = 1
-                   , _populationSize = 10
-                   , _speciesMaxSize = 5
+                   , _populationSize = 100
+                   , _speciesMaxSize = 30
                    , _stagnationMax = 15
-                   , _speciationThreshold = 3.0    -- this was 4.0 for DPLV (HARD Problem)
+                   , _speciationThreshold = 2.0    -- this was 4.0 for DPLV (HARD Problem)
                    , _weightedVsTopology = 0.4
                    , _crossoverChance = 0.7
                    , _smallScale = 0.2
                    , _largeScale = 2.0
                    , _maxLinkLength = 10
-                   , _sigmoidFunction = sigmoidXor
+                   , _sigmoidFunction = sigmoid
                    }
 
 -- Mutation rates:
@@ -72,11 +72,11 @@ data Genome = Genome { _numnodes :: Int
 makeClassy ''Genome
 
 instance Show Genome where
-    show (Genome n gs) = "Genome[" ++ show n ++ "]{" ++ 
+    show (Genome n gs) = "Genome[" ++ show n ++ "]{" ++
                          concat (map (\g -> "\n" ++ show g) gs) ++ "\n}"
 
 instance Show Gene where
-    show (Gene inp out wt e i) 
+    show (Gene inp out wt e i)
       | e = "[x]" ++ show i ++ ": " ++ show inp ++ " --> " ++ show wt ++ " --> " ++ show out
       | otherwise = "[ ]" ++ show i
 
@@ -95,19 +95,19 @@ type Species = ( Int                 --stagnation
 --creates initial population
 --random generator, intial size, num inputs, num outputs
 --TODO add biases
-initPopulation :: RandomGen g => g -> Config -> (Int,Population)
+initPopulation :: [Float] -> Config -> (Int,Population)
 initPopulation rgen config = (length genes,[species]) where
   size = config^.populationSize
   in_max= config^.numInputs - 1
   out_max = in_max + config^.numOutputs
-  species = (0,0.0,0.0,(0.0,genome),genomes)
-  genomes = zip (repeat 0) (replicate size genome)
-  genome = Genome (out_max + 1) genes
-  genes = zipWith3 (\g w i -> set weight w (set innovation i g))
-                   g0s (randomRs (0,1) rgen) [0..]
-  g0s = [ Gene inN outN 0 True 0 | inN <- [0 .. in_max] 
+  species = (0,0.0,0.0,(0.0,repGenome),genomes)
+  repGenome = Genome (out_max + 1) genes
+  genomes' = replicate size (\r -> (0.0,Genome (out_max + 1) (zipWith (set weight) r genes)))
+  genes = zipWith (set innovation) [0..] g0s
+  g0s = [ Gene inN outN 1.0 True 0 | inN <- [0 .. in_max]
                                  , outN <- [in_max + 1 .. out_max] ]
-  
+  genomes = zipWith (\r f -> f r)  [ map ((\x -> x-2.0) . (*4.0)) rs | rs <- iterate (drop (length genes)) rgen ] genomes'
+
 
 
 --random generator, function from genome to a fitness, population, max
@@ -116,16 +116,16 @@ initPopulation rgen config = (length genes,[species]) where
 --genomes from the population if their species has stagnated or if their
 --species exceed the max size and they are least fit of their species, then
 --produces the next generation of genomes and recurses with it
-run :: RandomGen g => g -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
+run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov p0 n = trace (show (fitnessFunc fittest) ++ "\n" ++ show fittest) $ run (snd $ next gen) config fitnessFunc gInnov' p3 (n - 1)
+run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
     fittest = fittestGenome p3
     p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
     p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\(a,_) (b,_) -> compare a b) gs)) p1
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
-    (gInnov',p3) = reproduce gen config gInnov p2
+    (gInnov',p3,gen') = reproduce gen config gInnov p2
 
 
 
@@ -144,24 +144,23 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') wh
 
 --produces the next generation of genomes
 --assumes the list of genomes is sort in ascending order by fitness
-reproduce :: RandomGen g => g -> Config -> Int -> Population -> (Int,Population)
-reproduce gen config gInnov0 population = (gInnov'',population') where
+reproduce :: [Float] -> Config -> Int -> Population -> (Int,Population,[Float])
+reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
-  prev_species = map (\(i0,_,_,g,gs) -> 
-                         let (g',_) = randomElem gen gs 
-                         in (i0,0,0,g',[])) 
+  prev_species = map (\(i0,_,_,g,gs) ->
+                         let g' = getElementR gs r
+                         in (i0,0,0,g',[]))
                      population --pick random genome from prev generation
   genomes = concat gss
-  (gInnov'',gss) = mapAccumR (\gInnov (i0,max_f0,sum_f0,g0,gs0) -> 
+  ((gInnov'',gen'),gss) = mapAccumR (\(gInnov,rs) s@(i0,max_f0,sum_f0,g0,gs0) ->
                                 let num_offspring = round $ sum_f0 / p_sum_f * p_size
                                     len = length gs0
-                                    stud | len > 5 = [snd $ last gs0]
+                                    stud | len >= 5 = [maxFittestGenome s]
                                          | otherwise = []
-                                    (gInnov',gs',_) = breedSpecies config gInnov num_offspring (map snd gs0) rs
-                                in (gInnov',gs' ++ stud)) 
-                             gInnov0 population
+                                    (gInnov',gs',rs') = breedSpecies config gInnov num_offspring (map snd gs0) rs
+                                in ((gInnov',rs'),gs' ++ stud))
+                             (gInnov0,gen) population
   population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
-  rs = randomRs (0,0.999999999) gen
   wghtVsTop = config^.weightedVsTopology
   specThresh = config^.speciationThreshold
   p_size = fromIntegral $ config^.populationSize
@@ -172,13 +171,13 @@ speciefy :: Float -> Float -> [Species] -> [Genome] -> [Species]
 speciefy _ _ species [] = species
 speciefy wghtVsTop specThresh species (g:gs)
   | isNothing matchIx = speciefy wghtVsTop specThresh ((0,0,0,(0,g),[(0,g)]):species) gs
-  | otherwise = speciefy wghtVsTop specThresh species' gs 
+  | otherwise = speciefy wghtVsTop specThresh species' gs
   where
     matchIx = findSpecies wghtVsTop specThresh g species
     i = fromJust matchIx
     (si,sm,ss,sg,sgs) = species !! i
     species' = take i species ++ (si,sm,ss,sg,(0,g):sgs) : drop (i + 1) species
-  
+
 findSpecies :: Float -> Float -> Genome -> [Species] -> Maybe Int
 findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,(_,repG),_) -> geneticDifference wghtVsTop repG g < specThresh)
 
@@ -195,7 +194,7 @@ cullEmpty :: [Species] -> [Species]
 cullEmpty = filter (\(_,_,_,_,gs) -> not $ null gs)
 
 -- is this done right ? the formula from the paper is
--- delta = c1*E/N + c2*D/N + c3*W_bar 
+-- delta = c1*E/N + c2*D/N + c3*W_bar
 -- where E is number of excess genes, D is number of disjoint genes,
 -- N is number of genes in larger genome, and W_bar is the average weight
 -- differences of matching genes
@@ -223,14 +222,14 @@ breedSpecies config gInnov n species rs = (gInnov'',newChild : otherChildren, rs
 breedChild :: Config -> Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
 breedChild _ _ [] _ = error "empty gs"
 breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
-  where (r1',r2') | r1 >= r2 = (r1,r2) 
+  where (r1',r2') | r1 >= r2 = (r1,r2)
                   | otherwise = (r2,r1)
         mom = getElementR gs r1' --make sure mom is fitter than dad
         dad = getElementR gs r2'
         (child,rs') | r < 0.7 = crossover mom dad rs
                     | otherwise = (getElementR gs r1, r2:rs)
         (gInnov',monster,rs'') = mutate config gInnov child rs'
-            
+
 
 cullSpecies :: Int -> Species-> Species
 cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
@@ -259,7 +258,7 @@ evaluateGenome config inputs (Genome maxNode genes) = outs
                 isMyGene g = g^.enabled && g^.output == n
 
 addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addNode gInnov g0@(Genome numnodes genes) (r:rs) 
+addNode gInnov g0@(Genome numnodes genes) (r:rs)
   | null enabledGenes = (gInnov,g0,r:rs)
   | otherwise = (gInnov+2,Genome (numnodes+1) genes', rs)
     where
@@ -270,21 +269,22 @@ addNode gInnov g0@(Genome numnodes genes) (r:rs)
         genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
 
 addLink :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addLink config gInnov (Genome nodes genes) (r:(r1:rs)) 
+addLink config gInnov (Genome nodes genes) (r:(r1:rs))
   | null disjointPairs = (gInnov,Genome nodes genes, r:r1:rs)
   | otherwise = (gInnov+1,Genome nodes (newGene : genes), rs)
     where
         inputMax = (config^.numInputs) - 1
         outputMax = inputMax + (config^.numOutputs)
         allPairs = [ (x,y) | x <- [0 .. inputMax] ++ [outputMax + 1 .. nodes]
-                           , y <- [inputMax + 1 .. nodes] ]
+                           , y <- [inputMax + 1 .. nodes]
+                           , x /= y ]
         gPairs = map (\g -> (g^.input,g^.output)) genes
         disjointPairs = allPairs \\ gPairs
         (inp,out) = getElementR disjointPairs r
         newGene = Gene inp out (r1 * 4.0 - 2.0) True gInnov
 
 disableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-disableGene gInnov g0@(Genome nodes genes) (r:rs) 
+disableGene gInnov g0@(Genome nodes genes) (r:rs)
   | null enabledGenes = (gInnov,g0,r:rs)
   | otherwise = (gInnov, Genome nodes genes', rs)
     where
@@ -293,7 +293,7 @@ disableGene gInnov g0@(Genome nodes genes) (r:rs)
         genes' = (enabled .~ False $ rGene) : delete rGene genes
 
 enableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-enableGene gInnov g0@(Genome nodes genes) (r:rs) 
+enableGene gInnov g0@(Genome nodes genes) (r:rs)
   | null disabled = (gInnov, g0,r:rs)
   | otherwise = (gInnov, Genome nodes genes', rs)
     where
@@ -305,12 +305,15 @@ uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
 uncurry3 f (a,b,c) = f a b c
 
 -- should mess with these rates of mutation...
+
+-- for large network (HARD real problems, #s should be)
+-- 0.1,0.2,0.3,0.5
 mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate config gInnov genome (r:rs)
-  | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
-  | r < 0.2 = uncurry3 (mutate config) $ addNode gInnov genome rs
-  | r < 0.3 = uncurry3 (mutate config) $ disableGene gInnov genome rs
-  | r < 0.5 = uncurry3 (mutate config) $ enableGene gInnov genome rs
+  | r < 0.05 = uncurry3 (mutate config) $ addLink config gInnov genome rs
+  | r < 0.08 = uncurry3 (mutate config) $ addNode gInnov genome rs
+  | r < 0.10 = uncurry3 (mutate config) $ disableGene gInnov genome rs
+  | r < 0.20 = uncurry3 (mutate config) $ enableGene gInnov genome rs
   | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
     where
         perturbWeights :: Genome -> [Float] -> Genome
@@ -345,13 +348,6 @@ fittestGenome :: Population -> Genome
 fittestGenome [] = error "empty population"
 fittestGenome p = maxFittestGenome . maxFittestSpecies $ p
 
-randomElem :: RandomGen g => g -> [a] -> (a,g)
-randomElem gen xs 
-  | i < 0 || i >= length xs = error "random elem"
-  | otherwise = (xs !! i,gen') 
-  where (i,gen') = randomR (0,length xs - 1) gen
-
-
 mapT :: (a -> b) -> (a,a) -> (b,b)
 mapT f (a,b) = (f a,f b)
 
@@ -366,12 +362,12 @@ xor 0 1 = 1
 xor _ _ = 0
 
 inputs :: [[Float]]
-inputs = [[0,0],[0,1],[1,0],[1,1]]
+inputs = [[1,0,0],[1,0,1],[1,1,0],[1,1,1]]
 
 outputs :: [Float]
 outputs = map (foldl1' xor) inputs
 
-{- To compute fitness for XOR, the distance of the output from the correct 
+{- To compute fitness for XOR, the distance of the output from the correct
 - answer is summed for all four input patterns. The result of this error
 - is subtracted from four so that higher fitness reflect better
 - network structure. The result is squared to give proportionally more
