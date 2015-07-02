@@ -121,9 +121,11 @@ run _ _ _ _ p0 0 = p0
 run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
     fittest = fittestGenome p3
+    stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
+    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1
     p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
-    p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\(a,_) (b,_) -> compare a b) gs)) p1
+    p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\(a,_) (b,_) -> compare a b) gs)) p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
     (gInnov',p3,gen') = reproduce gen config gInnov p2
 
@@ -147,9 +149,9 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') wh
 reproduce :: [Float] -> Config -> Int -> Population -> (Int,Population,[Float])
 reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
-  prev_species = map (\(i0,_,_,g,gs) ->
+  prev_species = map (\(i0,m,a,g,gs) ->
                          let g' = getElementR gs r
-                         in (i0,0,0,g',[]))
+                         in (i0,m,a,g',[])) -- we need to copy the prev values
                      population --pick random genome from prev generation
   genomes = concat gss
   ((gInnov'',gen'),gss) = mapAccumR (\(gInnov,rs) s@(i0,max_f0,sum_f0,g0,gs0) ->
