@@ -4,11 +4,11 @@
 module NeuralNetwork where
 
 import Emulator
-import System.Random
 import Data.List
 import Data.Maybe
 import Control.Lens
 import Control.Arrow ((&&&))
+import Numeric
 import Debug.Trace
 
 
@@ -66,14 +66,15 @@ data Gene = Gene { _input      :: Int
                  , _innovation :: Int } deriving (Eq)
 makeClassy ''Gene
 
-data Genome = Genome { _numnodes :: Int
+data Genome = Genome { _fitness :: Float
+                     , _numnodes :: Int
                      , _genes :: [Gene]
                      } deriving (Eq)
 makeClassy ''Genome
 
 instance Show Genome where
-    show (Genome n gs) = "Genome[" ++ show n ++ "]{" ++
-                         concatMap (\g -> "\n" ++ show g) gs ++ "\n}"
+    show (Genome f n gs) = "Genome[" ++ formatFloatN f 4 ++ "] [" ++show n ++
+                          "]{" ++ concatMap (\g -> "\n" ++ show g) gs ++ "\n}"
 
 instance Show Gene where
     show (Gene inp out wt e i)
@@ -88,8 +89,8 @@ type Population = [Species]
 type Species = ( Int                 --stagnation
                , Float               --max fitness
                , Float               --sum of fitnesses
-               , (Float,Genome)      --representative genome
-               , [(Float,Genome)])   --rest of genomes
+               , Genome              --representative genome
+               , [Genome])           --rest of genomes
 
 
 --creates initial population
@@ -100,9 +101,9 @@ initPopulation rgen config = (length genes,[species]) where
   size = config^.populationSize
   in_max= config^.numInputs - 1
   out_max = in_max + config^.numOutputs
-  species = (0,0.0,0.0,(0.0,repGenome),genomes)
-  repGenome = Genome (out_max + 1) genes
-  genomes' = replicate size (\r -> (0.0,Genome (out_max + 1) (zipWith (set weight) r genes)))
+  species = (0,0.0,0.0,repGenome,genomes)
+  repGenome = Genome 0.0 (out_max + 1) genes
+  genomes' = replicate size (\r -> Genome 0.0 (out_max + 1) (zipWith (set weight) r genes))
   genes = zipWith (set innovation) [0..] g0s
   g0s = [ Gene inN outN 1.0 True 0 | inN <- [0 .. in_max]
                                  , outN <- [in_max + 1 .. out_max] ]
@@ -118,14 +119,16 @@ initPopulation rgen config = (length genes,[species]) where
 --produces the next generation of genomes and recurses with it
 run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 (n - 1)
+run gen config fitnessFunc gInnov p0 n = trace (t ++ replicate 60 '=' ++ "\n\n") $ run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
+    t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1,p2,p3]
+    str x = intercalate "\n" (map speciesInfo x) ++ "\n" ++ replicate 30 '.' ++ "\n"
     fittest = fittestGenome p3
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
-    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1
+    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
     p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
-    p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\(a,_) (b,_) -> compare a b) gs)) p1'
+    p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs)) p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
     (gInnov',p3,gen') = reproduce gen config gInnov p2
 
@@ -133,12 +136,11 @@ run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 
 
 --calculates the fitness of each genome in species
 evalSpecies :: (Genome -> Float) -> Species -> Species
-evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i',max_f,sum_f,g0,gs') where
-  i' | max_f0 < max_f = 0 | otherwise = i0 + 1 --update stagnation counter
+evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f,g0,gs') where
   ((sum_f,max_f),gs') = mapAccumL go (0,0) gs0 --get sum and max fitness of species
   n = fromIntegral $ length gs0 --number of genomes in species
-  go :: (Float,Float) -> (Float,Genome) -> ((Float,Float),(Float,Genome))
-  go (acc,old_max) (_,g) = ((acc + f',new_max),(f',g)) where
+  go :: (Float,Float) -> Genome -> ((Float,Float),Genome)
+  go (acc,old_max) g = ((acc + f',new_max),fitness .~ f' $ g) where
     f = fitnessFunc g
     f' = f / n
     new_max = max old_max f'
@@ -159,7 +161,7 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
                                     len = length gs0
                                     stud | len >= 5 = [maxFittestGenome s]
                                          | otherwise = []
-                                    (gInnov',gs',rs') = breedSpecies config gInnov num_offspring (map snd gs0) rs
+                                    (gInnov',gs',rs') = breedSpecies config gInnov num_offspring gs0 rs
                                 in ((gInnov',rs'),gs' ++ stud))
                              (gInnov0,gen) population
   population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
@@ -172,16 +174,16 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
 speciefy :: Float -> Float -> [Species] -> [Genome] -> [Species]
 speciefy _ _ species [] = species
 speciefy wghtVsTop specThresh species (g:gs)
-  | isNothing matchIx = speciefy wghtVsTop specThresh ((0,0,0,(0,g),[(0,g)]):species) gs
+  | isNothing matchIx = speciefy wghtVsTop specThresh ((0,0,0,g,[g]):species) gs
   | otherwise = speciefy wghtVsTop specThresh species' gs
   where
     matchIx = findSpecies wghtVsTop specThresh g species
     i = fromJust matchIx
     (si,sm,ss,sg,sgs) = species !! i
-    species' = take i species ++ (si,sm,ss,sg,(0,g):sgs) : drop (i + 1) species
+    species' = take i species ++ (si,sm,ss,sg,g:sgs) : drop (i + 1) species
 
 findSpecies :: Float -> Float -> Genome -> [Species] -> Maybe Int
-findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,(_,repG),_) -> geneticDifference wghtVsTop repG g < specThresh)
+findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,repG,_) -> geneticDifference wghtVsTop repG g < specThresh)
 
 
 --removes species whos fitness has stagnated and removes
@@ -235,13 +237,13 @@ breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
 
 cullSpecies :: Int -> Species-> Species
 cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
-  where sorted = sortBy (\(a,_) (b,_) -> compare a b) gs
-        gs' = take numberToLeave sorted
+  where sorted = sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs
+        gs' = drop (length gs - numberToLeave) sorted
 
 
 --a more general evalute genome?
 evaluateGenome :: Config -> [Float] -> Genome -> [Float]
-evaluateGenome config inputs (Genome maxNode genes) = outs
+evaluateGenome config inputs (Genome _ maxNode genes) = outs
     where
         maxLL = config^.maxLinkLength
         numIn = config^.numInputs
@@ -260,9 +262,9 @@ evaluateGenome config inputs (Genome maxNode genes) = outs
                 isMyGene g = g^.enabled && g^.output == n
 
 addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addNode gInnov g0@(Genome numnodes genes) (r:rs)
+addNode gInnov g0@(Genome _ numnodes genes) (r:rs)
   | null enabledGenes = (gInnov,g0,r:rs)
-  | otherwise = (gInnov+2,Genome (numnodes+1) genes', rs)
+  | otherwise = (gInnov+2,Genome 0.0 (numnodes+1) genes', rs)
     where
         enabledGenes = filter (^.enabled) genes
         rGene = getElementR enabledGenes r
@@ -271,9 +273,9 @@ addNode gInnov g0@(Genome numnodes genes) (r:rs)
         genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
 
 addLink :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addLink config gInnov (Genome nodes genes) (r:(r1:rs))
-  | null disjointPairs = (gInnov,Genome nodes genes, r:r1:rs)
-  | otherwise = (gInnov+1,Genome nodes (newGene : genes), rs)
+addLink config gInnov (Genome _ nodes genes) (r:(r1:rs))
+  | null disjointPairs = (gInnov,Genome 0.0 nodes genes, r:r1:rs)
+  | otherwise = (gInnov+1,Genome 0.0 nodes (newGene : genes), rs)
     where
         inputMax = (config^.numInputs) - 1
         outputMax = inputMax + (config^.numOutputs)
@@ -286,18 +288,18 @@ addLink config gInnov (Genome nodes genes) (r:(r1:rs))
         newGene = Gene inp out (r1 * 4.0 - 2.0) True gInnov
 
 disableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-disableGene gInnov g0@(Genome nodes genes) (r:rs)
+disableGene gInnov g0@(Genome fit nodes genes) (r:rs)
   | null enabledGenes = (gInnov,g0,r:rs)
-  | otherwise = (gInnov, Genome nodes genes', rs)
+  | otherwise = (gInnov, Genome fit nodes genes', rs)
     where
         enabledGenes = filter (^.enabled) genes
         rGene = getElementR enabledGenes r
         genes' = (enabled .~ False $ rGene) : delete rGene genes
 
 enableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
-enableGene gInnov g0@(Genome nodes genes) (r:rs)
+enableGene gInnov g0@(Genome fit nodes genes) (r:rs)
   | null disabled = (gInnov, g0,r:rs)
-  | otherwise = (gInnov, Genome nodes genes', rs)
+  | otherwise = (gInnov, Genome fit nodes genes', rs)
     where
         disabled = filter (not . (^.enabled)) genes
         rGene = getElementR disabled r
@@ -344,7 +346,7 @@ maxFittestSpecies :: Population -> Species
 maxFittestSpecies = maximumBy (\(_,a,_,_,_) (_,b,_,_,_) -> compare a b)
 
 maxFittestGenome :: Species -> Genome
-maxFittestGenome (_,_,_,_,gs) = snd (maximumBy (\(f0,_) (f1,_) -> compare f0 f1) gs)
+maxFittestGenome (_,_,_,_,gs) = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gs
 
 fittestGenome :: Population -> Genome
 fittestGenome [] = error "empty population"
@@ -378,3 +380,10 @@ outputs = map (foldl1' xor) inputs
 fitnessXor :: Config -> Genome -> Float
 fitnessXor config g = let genome_outs = concatMap (flip (evaluateGenome config) g) inputs
                       in (4 - sum (map abs (zipWith (-) outputs genome_outs))) ^ 2
+
+speciesInfo :: Species -> String
+speciesInfo (a,b,c,d,e) = "stag[" ++ show a ++ "]\tmax fit[" ++ formatFloatN b 4 ++
+      "]\tsum fit[" ++ formatFloatN c 4 ++ "]\tsize[" ++ show (length e) ++ "]"
+
+
+formatFloatN floatNum numOfDecimals = showFFloat (Just numOfDecimals) floatNum ""
