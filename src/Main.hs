@@ -15,7 +15,7 @@ main = do
     let (gInnov,p) = initPopulation rs config
     print $ fittestGenome p
     let f = fitnessXor config
-    let p' = run rs config f gInnov p 35
+    let p' = run rs config f gInnov p 45
     let g0 = fittestGenome p'
     print g0
     print $ f g0

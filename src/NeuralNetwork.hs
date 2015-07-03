@@ -121,12 +121,10 @@ run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Pop
 run _ _ _ _ p0 0 = p0
 run gen config fitnessFunc gInnov p0 n = trace (t ++ "\n" ++ replicate 60 '=') $ run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
-    t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1,p2,p3]
+    t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1',p2,p3]
     str x = intercalate "\n" (map speciesInfo x)
-    fittest = fittestGenome p3
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
     p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
-    p2l = length p2
     p1 = map (evalSpecies fitnessFunc) p0
     p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs)) p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
@@ -151,13 +149,16 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f,g0,gs') wh
 reproduce :: [Float] -> Config -> Int -> Population -> (Int,Population,[Float])
 reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
+  p_avg_f = p_sum_f / p_size
   prev_species = map (\(i0,m,a,g,gs) ->
                          let g' = getElementR gs r
                          in (i0,m,a,g',[])) -- we need to copy the prev values
                      population --pick random genome from prev generation
   genomes = concat gss
   ((gInnov'',gen'),gss) = mapAccumR (\(gInnov,rs) s@(i0,max_f0,sum_f0,g0,gs0) ->
-                                let num_offspring = round $ sum_f0 / p_sum_f * p_size
+                                let avg_f = sum_f0 / fromIntegral (length gs0)
+                                   -- num_offspring = floor $ avg_f / p_avg_f * p_size -- this normalizes for species size
+                                    num_offspring = round $ sum_f0 / p_sum_f * p_size
                                     len = length gs0
                                     stud | len >= 5 = [maxFittestGenome s]
                                          | otherwise = []
@@ -235,10 +236,10 @@ breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
         (gInnov',monster,rs'') = mutate config gInnov child rs'
 
 
+--assumes the genomes in species are sorted in ascending order
 cullSpecies :: Int -> Species-> Species
 cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
-  where sorted = sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs
-        gs' = drop (length gs - numberToLeave) sorted
+  where gs' = drop (length gs - numberToLeave) gs
 
 
 --a more general evalute genome?
