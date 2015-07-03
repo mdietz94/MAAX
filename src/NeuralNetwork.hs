@@ -33,7 +33,7 @@ sigmoid x = 2.0 / (1.0 + exp (-4.9 * x)) - 1.0
 sigmoidXor :: Float -> Float
 sigmoidXor x = exp x / (1 + exp x)
 sigmoidXor2 :: Float -> Float
-sigmoidXor2 x = 1 / (1 + exp (0 - x))
+sigmoidXor2 x = 1 / (1 + exp (negate x))
 -- TODO: IMPLEMENT STAGNATION!
 xorConfig = Config { _numInputs = 3
                    , _numOutputs = 1
@@ -73,7 +73,7 @@ makeClassy ''Genome
 
 instance Show Genome where
     show (Genome n gs) = "Genome[" ++ show n ++ "]{" ++
-                         concat (map (\g -> "\n" ++ show g) gs) ++ "\n}"
+                         concatMap (\g -> "\n" ++ show g) gs ++ "\n}"
 
 instance Show Gene where
     show (Gene inp out wt e i)
@@ -204,7 +204,7 @@ cullEmpty = filter (\(_,_,_,_,gs) -> not $ null gs)
 geneticDifference :: Float -> Genome -> Genome -> Float
 geneticDifference wghtVsTop g1 g2 = excess_disjoint / num + wghtVsTop * (diff / fromIntegral (length genesBoth))
     where
-        excess_disjoint = fromIntegral . length $ (union genes1Inn genes2Inn) \\ (intersect genes1Inn genes2Inn)
+        excess_disjoint = fromIntegral . length $ union genes1Inn genes2Inn \\ intersect genes1Inn genes2Inn
         genes1Inn = map (^.innovation) . filter (^.enabled) $ g1^.genes
         genes2Inn = map (^.innovation) . filter (^.enabled) $ g2^.genes
         genesBoth = map (getInnovation g1 &&& getInnovation g2) $ intersect genes1Inn genes2Inn
@@ -338,7 +338,7 @@ crossover genome1 genome2 rs = (genes .~ genes2 ++ genes1 $ genome1, drop (genom
 
 -- just gets an element, convenient for using randoms
 getElementR :: [a] -> Float -> a
-getElementR xs r = xs !! (floor ( r * fromIntegral (length xs)))
+getElementR xs r = xs !! floor ( r * fromIntegral (length xs))
 
 maxFittestSpecies :: Population -> Species
 maxFittestSpecies = maximumBy (\(_,a,_,_,_) (_,b,_,_,_) -> compare a b)
@@ -376,5 +376,5 @@ outputs = map (foldl1' xor) inputs
 - fitness the closer the network is to a solution
 -}
 fitnessXor :: Config -> Genome -> Float
-fitnessXor config g = let genome_outs = concat $ map (flip (evaluateGenome config) g) inputs
+fitnessXor config g = let genome_outs = concatMap (flip (evaluateGenome config) g) inputs
                       in (4 - sum (map abs (zipWith (-) outputs genome_outs))) ^ 2
