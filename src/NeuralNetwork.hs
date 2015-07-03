@@ -119,10 +119,10 @@ initPopulation rgen config = (length genes,[species]) where
 --produces the next generation of genomes and recurses with it
 run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov p0 n = trace (t ++ replicate 60 '=' ++ "\n\n") $ run gen' config fitnessFunc gInnov' p3 (n - 1)
+run gen config fitnessFunc gInnov p0 n = trace (t ++ "\n" ++ replicate 60 '=') $ run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
     t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1,p2,p3]
-    str x = intercalate "\n" (map speciesInfo x) ++ "\n" ++ replicate 30 '.' ++ "\n"
+    str x = intercalate "\n" (map speciesInfo x)
     fittest = fittestGenome p3
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
     p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
@@ -273,9 +273,9 @@ addNode gInnov g0@(Genome _ numnodes genes) (r:rs)
         genes' = [newGene1, newGene2, enabled .~ False $ rGene] ++ delete rGene genes
 
 addLink :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
-addLink config gInnov (Genome _ nodes genes) (r:(r1:rs))
-  | null disjointPairs = (gInnov,Genome 0.0 nodes genes, r:r1:rs)
-  | otherwise = (gInnov+1,Genome 0.0 nodes (newGene : genes), rs)
+addLink config gInnov (Genome fit nodes genes) (r:(r1:rs))
+  | null disjointPairs = (gInnov,Genome fit nodes genes, r:r1:rs)
+  | otherwise = (gInnov+1,Genome fit nodes (newGene : genes), rs)
     where
         inputMax = (config^.numInputs) - 1
         outputMax = inputMax + (config^.numOutputs)
