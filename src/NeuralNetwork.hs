@@ -9,6 +9,7 @@ import Data.List
 import Data.Maybe
 import Control.Lens
 import Control.Arrow ((&&&))
+import Numeric
 import Debug.Trace
 
 
@@ -118,12 +119,12 @@ initPopulation rgen config = (length genes,[species]) where
 --produces the next generation of genomes and recurses with it
 run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 (n - 1)
+run gen config fitnessFunc gInnov p0 n = trace (t ++ "\n" ++ replicate 60 '=') $ run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
-    fittest = fittestGenome p3
+    t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1,p2,p3]
+    str x = intercalate "\n" (map speciesInfo x)
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
-    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1
-    p2l = length p2
+    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
     p1 = map (evalSpecies fitnessFunc) p0
     p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\(a,_) (b,_) -> compare a b) gs)) p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
@@ -236,7 +237,7 @@ breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
 cullSpecies :: Int -> Species-> Species
 cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
   where sorted = sortBy (\(a,_) (b,_) -> compare a b) gs
-        gs' = take numberToLeave sorted
+        gs' = drop (length gs - numberToLeave) sorted
 
 
 --a more general evalute genome?
@@ -378,3 +379,10 @@ outputs = map (foldl1' xor) inputs
 fitnessXor :: Config -> Genome -> Float
 fitnessXor config g = let genome_outs = concatMap (flip (evaluateGenome config) g) inputs
                       in (4 - sum (map abs (zipWith (-) outputs genome_outs))) ^ 2
+
+speciesInfo :: Species -> String
+speciesInfo (a,b,c,d,e) = "stag[" ++ show a ++ "]\tmax fit[" ++ formatFloatN b 4 ++
+      "]\tsum fit[" ++ formatFloatN c 4 ++ "]\tsize[" ++ show (length e) ++ "]"
+
+
+formatFloatN floatNum numOfDecimals = showFFloat (Just numOfDecimals) floatNum ""
