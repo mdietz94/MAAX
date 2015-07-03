@@ -34,7 +34,7 @@ sigmoidXor :: Float -> Float
 sigmoidXor x = exp x / (1 + exp x)
 sigmoidXor2 :: Float -> Float
 sigmoidXor2 x = 1 / (1 + exp (negate x))
--- TODO: IMPLEMENT STAGNATION!
+
 xorConfig = Config { _numInputs = 3
                    , _numOutputs = 1
                    , _populationSize = 100
@@ -95,7 +95,6 @@ type Species = ( Int                 --stagnation
 
 --creates initial population
 --random generator, intial size, num inputs, num outputs
---TODO add biases
 initPopulation :: [Float] -> Config -> (Int,Population)
 initPopulation rgen config = (length genes,[species]) where
   size = config^.populationSize
@@ -110,6 +109,11 @@ initPopulation rgen config = (length genes,[species]) where
   genomes = zipWith (\r f -> f r)  [ map ((\x -> x-2.0) . (*4.0)) rs | rs <- iterate (drop (length genes)) rgen ] genomes'
 
 
+-- TODO: 
+--  we cull the population before reproduce. The paper implies to cull the
+--  population AFTER reproduction. This might effect the adjusted fitness
+--  of each species
+--      tried this and didn't make difference - JR
 
 --random generator, function from genome to a fitness, population, max
 --number of generations to run
@@ -126,10 +130,9 @@ run gen config fitnessFunc gInnov p0 n = trace (t ++ "\n" ++ replicate 60 '=') $
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
     p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
     p1 = map (evalSpecies fitnessFunc) p0
-    p1sorted = map (\(a,b,c,d,gs) -> (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs)) p1'
+    p1sorted = map sortSpecies p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
     (gInnov',p3,gen') = reproduce gen config gInnov p2
-
 
 
 --calculates the fitness of each genome in species
@@ -358,6 +361,9 @@ mapT f (a,b) = (f a,f b)
 
 lengthNum :: Num b => [a] -> b
 lengthNum = fromIntegral . length
+
+sortSpecies :: Species -> Species
+sortSpecies (a,b,c,d,gs) = (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs) 
 
 
 --XOR code for testing neural network
