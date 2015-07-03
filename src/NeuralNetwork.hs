@@ -109,7 +109,7 @@ initPopulation rgen config = (length genes,[species]) where
   genomes = zipWith (\r f -> f r)  [ map ((\x -> x-2.0) . (*4.0)) rs | rs <- iterate (drop (length genes)) rgen ] genomes'
 
 
--- TODO: 
+-- TODO:
 --  we cull the population before reproduce. The paper implies to cull the
 --  population AFTER reproduction. This might effect the adjusted fitness
 --  of each species
@@ -163,7 +163,7 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
                                    -- num_offspring = floor $ avg_f / p_avg_f * p_size -- this normalizes for species size
                                     num_offspring = round $ sum_f0 / p_sum_f * p_size
                                     len = length gs0
-                                    stud | len >= 5 = [maxFittestGenome s]
+                                    stud | len >= 5 = [last gs0]
                                          | otherwise = []
                                     (gInnov',gs',rs') = breedSpecies config gInnov num_offspring gs0 rs
                                 in ((gInnov',rs'),gs' ++ stud))
@@ -230,10 +230,11 @@ breedSpecies config gInnov n species rs = (gInnov'',newChild : otherChildren, rs
 breedChild :: Config -> Int -> [Genome] -> [Float] -> (Int,Genome,[Float])
 breedChild _ _ [] _ = error "empty gs"
 breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
-  where (r1',r2') | r1 >= r2 = (r1,r2)
-                  | otherwise = (r2,r1)
-        mom = getElementR gs r1' --make sure mom is fitter than dad
-        dad = getElementR gs r2'
+  where
+        g1 = getElementR gs r1
+        g2 = getElementR gs r2
+        (mom,dad) | g1^.fitness >= g2^.fitness = (g1,g2)
+                  | otherwise = (g2,g1)
         (child,rs') | r < 0.7 = crossover mom dad rs
                     | otherwise = (getElementR gs r1, r2:rs)
         (gInnov',monster,rs'') = mutate config gInnov child rs'
@@ -317,19 +318,20 @@ uncurry3 f (a,b,c) = f a b c
 -- for large network (HARD real problems, #s should be)
 -- 0.1,0.2,0.3,0.5
 mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
-mutate config gInnov genome (r:rs)
-  | r < 0.05 = uncurry3 (mutate config) $ addLink config gInnov genome rs
-  | r < 0.08 = uncurry3 (mutate config) $ addNode gInnov genome rs
-  | r < 0.10 = uncurry3 (mutate config) $ disableGene gInnov genome rs
-  | r < 0.20 = uncurry3 (mutate config) $ enableGene gInnov genome rs
-  | otherwise = (gInnov, perturbWeights genome rs, drop (genome^.genes.to length) rs)
-    where
-        perturbWeights :: Genome -> [Float] -> Genome
-        perturbWeights genome rs = genes %~ map (uncurry perturb) . zip rs $ genome
-        perturb :: Float -> Gene -> Gene
-        perturb r = if smallChange then weight +~ r * 0.2 - 0.1 / 2.0 else weight .~ r * 4.0 - 2.0
-            where
-                smallChange = floor (r * 100.0) `mod` 10 > 0
+mutate config gInnov genome rs = mutateH gInnov (perturbWeights genome rs) (drop (genome^.genes.to length) rs)
+  where
+    mutateH gInnov genome (r:rs)
+      | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
+      | r < 0.2 = uncurry3 (mutate config) $ addNode gInnov genome rs
+      | r < 0.3 = uncurry3 (mutate config) $ disableGene gInnov genome rs
+      | r < 0.5 = uncurry3 (mutate config) $ enableGene gInnov genome rs
+      | otherwise = (gInnov, genome, (r:rs))
+    perturbWeights :: Genome -> [Float] -> Genome
+    perturbWeights genome rs = genes %~ map (uncurry perturb) . zip rs $ genome
+    perturb :: Float -> Gene -> Gene
+    perturb r = if smallChange then weight +~ r * 0.2 - 0.1 / 2.0 else weight .~ r * 4.0 - 2.0
+      where
+        smallChange = floor (r * 100.0) `mod` 10 > 0
 
 
 -- genome1 MUST be fitter than genome2!
@@ -363,7 +365,7 @@ lengthNum :: Num b => [a] -> b
 lengthNum = fromIntegral . length
 
 sortSpecies :: Species -> Species
-sortSpecies (a,b,c,d,gs) = (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs) 
+sortSpecies (a,b,c,d,gs) = (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs)
 
 
 --XOR code for testing neural network
