@@ -37,12 +37,12 @@ sigmoidXor2 x = 1 / (1 + exp (negate x))
 
 xorConfig = Config { _numInputs = 3
                    , _numOutputs = 1
-                   , _populationSize = 100
+                   , _populationSize = 300
                    , _speciesMaxSize = 30
                    , _stagnationMax = 15
-                   , _speciationThreshold = 2.0    -- this was 4.0 for DPLV (HARD Problem)
+                   , _speciationThreshold = 1.0    -- this was 4.0 for DPLV (HARD Problem)
                    , _weightedVsTopology = 0.4
-                   , _crossoverChance = 0.7
+                   , _crossoverChance = 0.75
                    , _smallScale = 0.2
                    , _largeScale = 2.0
                    , _maxLinkLength = 10
@@ -121,14 +121,14 @@ initPopulation rgen config = (length genes,[species]) where
 --genomes from the population if their species has stagnated or if their
 --species exceed the max size and they are least fit of their species, then
 --produces the next generation of genomes and recurses with it
-run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
-run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov p0 n = trace (t ++ "\n" ++ replicate 60 '=') $ run gen' config fitnessFunc gInnov' p3 (n - 1)
+run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> (Int,Population,[Float])
+run r _ _ g p0 0 = (g,p0,r)
+run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
     t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1',p2,p3]
     str x = intercalate "\n" (map speciesInfo x)
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
-    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (s,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
+    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
     p1 = map (evalSpecies fitnessFunc) p0
     p1sorted = map sortSpecies p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
@@ -321,15 +321,15 @@ mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate config gInnov genome rs = mutateH gInnov (perturbWeights genome rs) (drop (genome^.genes.to length) rs)
   where
     mutateH gInnov genome (r:rs)
-      | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
-      | r < 0.2 = uncurry3 (mutate config) $ addNode gInnov genome rs
-      | r < 0.3 = uncurry3 (mutate config) $ disableGene gInnov genome rs
-      | r < 0.5 = uncurry3 (mutate config) $ enableGene gInnov genome rs
+      | r < 0.4 = uncurry3 (mutate config) $ addLink config gInnov genome rs
+      | r < 0.5 = uncurry3 (mutate config) $ addNode gInnov genome rs
+      | r < 0.6 = uncurry3 (mutate config) $ disableGene gInnov genome rs
+      | r < 0.7 = uncurry3 (mutate config) $ enableGene gInnov genome rs
       | otherwise = (gInnov, genome, (r:rs))
     perturbWeights :: Genome -> [Float] -> Genome
     perturbWeights genome rs = genes %~ map (uncurry perturb) . zip rs $ genome
     perturb :: Float -> Gene -> Gene
-    perturb r = if smallChange then weight +~ r * 0.2 - 0.1 / 2.0 else weight .~ r * 4.0 - 2.0
+    perturb r = if smallChange then weight +~ r * 0.4 - 0.2 else weight .~ r * 4.0 - 2.0
       where
         smallChange = floor (r * 100.0) `mod` 10 > 0
 
