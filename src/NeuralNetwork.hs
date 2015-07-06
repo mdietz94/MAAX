@@ -121,8 +121,8 @@ initPopulation rgen config = (length genes,[species]) where
 --genomes from the population if their species has stagnated or if their
 --species exceed the max size and they are least fit of their species, then
 --produces the next generation of genomes and recurses with it
-run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> (Int,Population,[Float])
-run r _ _ g p0 0 = (g,p0,r)
+run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
+run _ _ _ _ p0 0 = p0
 run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
     t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1',p2,p3]
@@ -137,7 +137,7 @@ run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 
 
 --calculates the fitness of each genome in species
 evalSpecies :: (Genome -> Float) -> Species -> Species
-evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f,g0,gs') where
+evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f / n,g0,gs') where
   ((sum_f,max_f),gs') = mapAccumL go (0,0) gs0 --get sum and max fitness of species
   n = fromIntegral $ length gs0 --number of genomes in species
   go :: (Float,Float) -> Genome -> ((Float,Float),Genome)
@@ -154,7 +154,7 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
   p_avg_f = p_sum_f / p_size
   prev_species = map (\(i0,m,a,g,gs) ->
-                         let g' = getElementR gs r
+                         let g' = maxFittestGenome (i0,m,a,g,gs)
                          in (i0,m,a,g',[])) -- we need to copy the prev values
                      population --pick random genome from prev generation
   genomes = concat gss
