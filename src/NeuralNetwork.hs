@@ -198,10 +198,10 @@ cull maxSize maxStag = cullEmpty .
 
 cullWeakSpecies :: Population -> Population
 cullWeakSpecies pop = p' where
-  p_sum_f = foldl' (\a (_,_,_,_,gs) -> a + sum (map (^.fitness) gs)) 0.0 pop
-  p_avg_f = p_sum_f / (fromIntegral $ popSize pop)
-  p' = map (\(s,m,f,g,gs) -> (s,m,f,g,filter (\x -> (x^.fitness / p_avg_f) >= 0.9) gs)) pop
-
+  p_size = fromIntegral $ popSize pop
+  avg_fs = map speciesAvgFitness pop
+  p_avg_f = sum avg_fs
+  p' = map snd $ filter (\(avg,s) -> avg / p_avg_f * p_size >= 0.6) (zip avg_fs pop)
 
 --removes species which no longer have any members
 cullEmpty :: [Species] -> [Species]
@@ -249,7 +249,7 @@ breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
 --assumes the genomes in species are sorted in ascending order
 cullSpecies :: Int -> Species-> Species
 cullSpecies maxSize (i,m,s,g,gs) = (i,m,s,g,gs')
-  where gs' = drop (length gs - maxSize) gs
+  where gs' = drop (max (length gs - maxSize) (length gs `rem` 2)) gs
 
 
 --a more general evalute genome?
