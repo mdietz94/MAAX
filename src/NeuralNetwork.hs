@@ -40,7 +40,7 @@ xorConfig = Config { _numInputs = 3
                    , _populationSize = 150
                    , _speciesMaxSize = 30
                    , _stagnationMax = 15
-                   , _speciationThreshold = 3.0    -- this was 4.0 for DPLV (HARD Problem)
+                   , _speciationThreshold = 2.0    -- this was 4.0 for DPLV (HARD Problem)
                    , _weightedVsTopology = 0.6
                    , _crossoverChance = 0.75
                    , _smallScale = 0.2
@@ -160,7 +160,7 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
                      population --pick random genome from prev generation
   genomes = concat gss
   ((gInnov'',gen'),gss) = mapAccumR (\(gInnov,rs) s@(i0,max_f0,sum_f0,g0,gs0) ->
-                                let avg_f = sum_f0 / fromIntegral (length gs0)
+                                let avg_f = speciesAvgFitness s
                                    -- num_offspring = floor $ avg_f / p_avg_f * p_size
                                     num_offspring = round $ sum_f0 / p_sum_f * p_size
                                     len = length gs0
@@ -194,8 +194,17 @@ findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,repG,_) -> geneticDiffer
 --the least fit genomes from each species
 --assumes genomes are sorted in ascending order by fitness
 cull :: Int -> Int -> Population -> Population
-cull maxSize maxStag = map (cullSpecies maxSize) . filter (\(i,_,_,_,_) -> i < maxStag)
+cull maxSize maxStag = cullWeakSpecies . 
+                       map (cullSpecies maxSize) .
+                       filter (\(i,_,_,_,_) -> i < maxStag)
 
+cullWeakSpecies :: Population -> Population
+cullWeakSpecies pop = p' where
+  p_size = fromIntegral $ popSize pop
+  avg_fs = map speciesAvgFitness pop
+  p_avg_f = sum avg_fs
+  p' = map snd $ filter (\(avg,s) -> floor (avg / p_avg_f * p_size) >= 1) (zip avg_fs pop)
+  
 
 --removes species which no longer have any members
 cullEmpty :: [Species] -> [Species]
@@ -369,6 +378,9 @@ sortSpecies (a,b,c,d,gs) = (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fit
 
 popSize :: Population -> Int
 popSize = sum . map (\(_,_,_,_,gs) -> length gs)
+
+speciesAvgFitness :: Species -> Float
+speciesAvgFitness (_,_,s,_,gs) = s / fromIntegral (length gs)
 
 
 --XOR code for testing neural network
