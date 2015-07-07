@@ -249,7 +249,7 @@ breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
 --assumes the genomes in species are sorted in ascending order
 cullSpecies :: Int -> Species-> Species
 cullSpecies maxSize (i,m,s,g,gs) = (i,m,s,g,gs')
-  where gs' = drop (max (length gs - maxSize) (length gs `rem` 2)) gs
+  where gs' = drop (max (length gs - maxSize) (length gs `quot` 2)) gs
 
 
 --a more general evalute genome?
