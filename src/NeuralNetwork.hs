@@ -37,15 +37,15 @@ sigmoidXor2 x = 1 / (1 + exp (negate x))
 
 xorConfig = Config { _numInputs = 3
                    , _numOutputs = 1
-                   , _populationSize = 300
+                   , _populationSize = 150
                    , _speciesMaxSize = 30
                    , _stagnationMax = 15
-                   , _speciationThreshold = 1.0    -- this was 4.0 for DPLV (HARD Problem)
-                   , _weightedVsTopology = 0.4
+                   , _speciationThreshold = 3.0    -- this was 4.0 for DPLV (HARD Problem)
+                   , _weightedVsTopology = 0.6
                    , _crossoverChance = 0.75
                    , _smallScale = 0.2
                    , _largeScale = 2.0
-                   , _maxLinkLength = 10
+                   , _maxLinkLength = 3
                    , _sigmoidFunction = sigmoid
                    }
 
@@ -123,7 +123,7 @@ initPopulation rgen config = (length genes,[species]) where
 --produces the next generation of genomes and recurses with it
 run :: [Float] -> Config -> (Genome -> Float) -> Int -> Population -> Int -> Population
 run _ _ _ _ p0 0 = p0
-run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 (n - 1)
+run gen config fitnessFunc gInnov p0 n = trace t $ run gen' config fitnessFunc gInnov' p3 (n - 1)
   where
     t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1',p2,p3]
     str x = intercalate "\n" (map speciesInfo x)
@@ -137,7 +137,7 @@ run gen config fitnessFunc gInnov p0 n = run gen' config fitnessFunc gInnov' p3 
 
 --calculates the fitness of each genome in species
 evalSpecies :: (Genome -> Float) -> Species -> Species
-evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f / n,g0,gs') where
+evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f,g0,gs') where
   ((sum_f,max_f),gs') = mapAccumL go (0,0) gs0 --get sum and max fitness of species
   n = fromIntegral $ length gs0 --number of genomes in species
   go :: (Float,Float) -> Genome -> ((Float,Float),Genome)
@@ -153,6 +153,7 @@ reproduce :: [Float] -> Config -> Int -> Population -> (Int,Population,[Float])
 reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
   p_avg_f = p_sum_f / p_size
+  p_size = fromIntegral $ popSize population
   prev_species = map (\(i0,m,a,g,gs) ->
                          let g' = maxFittestGenome (i0,m,a,g,gs)
                          in (i0,m,a,g',[])) -- we need to copy the prev values
@@ -160,7 +161,7 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   genomes = concat gss
   ((gInnov'',gen'),gss) = mapAccumR (\(gInnov,rs) s@(i0,max_f0,sum_f0,g0,gs0) ->
                                 let avg_f = sum_f0 / fromIntegral (length gs0)
-                                   -- num_offspring = floor $ avg_f / p_avg_f * p_size -- this normalizes for species size
+                                   -- num_offspring = floor $ avg_f / p_avg_f * p_size
                                     num_offspring = round $ sum_f0 / p_sum_f * p_size
                                     len = length gs0
                                     stud | len >= 5 = [last gs0]
@@ -171,7 +172,6 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   population' = cullEmpty $ speciefy wghtVsTop specThresh prev_species genomes
   wghtVsTop = config^.weightedVsTopology
   specThresh = config^.speciationThreshold
-  p_size = fromIntegral $ config^.populationSize
 
 --divides a list of genomes into a list os species
 --requires a list of representative species from the last generation
@@ -242,8 +242,8 @@ breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
 
 --assumes the genomes in species are sorted in ascending order
 cullSpecies :: Int -> Species-> Species
-cullSpecies numberToLeave (i,m,s,g,gs) = (i,m,s,g,gs')
-  where gs' = drop (length gs - numberToLeave) gs
+cullSpecies maxSize (i,m,s,g,gs) = (i,m,s,g,gs')
+  where gs' = drop (length gs - maxSize) gs
 
 
 --a more general evalute genome?
@@ -321,11 +321,11 @@ mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate config gInnov genome rs = mutateH gInnov (perturbWeights genome rs) (drop (genome^.genes.to length) rs)
   where
     mutateH gInnov genome (r:rs)
-      | r < 0.4 = uncurry3 (mutate config) $ addLink config gInnov genome rs
+      | r < 0.47 = uncurry3 (mutate config) $ addLink config gInnov genome rs
       | r < 0.5 = uncurry3 (mutate config) $ addNode gInnov genome rs
       | r < 0.6 = uncurry3 (mutate config) $ disableGene gInnov genome rs
       | r < 0.7 = uncurry3 (mutate config) $ enableGene gInnov genome rs
-      | otherwise = (gInnov, genome, (r:rs))
+      | otherwise = (gInnov, genome, r:rs)
     perturbWeights :: Genome -> [Float] -> Genome
     perturbWeights genome rs = genes %~ map (uncurry perturb) . zip rs $ genome
     perturb :: Float -> Gene -> Gene
@@ -366,6 +366,9 @@ lengthNum = fromIntegral . length
 
 sortSpecies :: Species -> Species
 sortSpecies (a,b,c,d,gs) = (a,b,c,d,sortBy (\a b -> compare (a^.fitness) (b^.fitness)) gs)
+
+popSize :: Population -> Int
+popSize = sum . map (\(_,_,_,_,gs) -> length gs)
 
 
 --XOR code for testing neural network
