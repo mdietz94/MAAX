@@ -35,17 +35,17 @@ sigmoidXor x = exp x / (1 + exp x)
 sigmoidXor2 :: Float -> Float
 sigmoidXor2 x = 1 / (1 + exp (negate x))
 
-xorConfig = Config { _numInputs = 3
+xorConfig = Config { _numInputs = 2
                    , _numOutputs = 1
                    , _populationSize = 150
                    , _speciesMaxSize = 30
                    , _stagnationMax = 15
-                   , _speciationThreshold = 2.0    -- this was 4.0 for DPLV (HARD Problem)
-                   , _weightedVsTopology = 0.6
+                   , _speciationThreshold = 0.1    -- this was 4.0 for DPLV (HARD Problem)
+                   , _weightedVsTopology = 0.4
                    , _crossoverChance = 0.75
                    , _smallScale = 0.2
                    , _largeScale = 2.0
-                   , _maxLinkLength = 3
+                   , _maxLinkLength = 10
                    , _sigmoidFunction = sigmoid
                    }
 
@@ -128,7 +128,7 @@ run gen config fitnessFunc gInnov p0 n = trace t $ run gen' config fitnessFunc g
     t = intercalate ("\n" ++ replicate 50 '-' ++ "\n") $ map str [p1',p2,p3]
     str x = intercalate "\n" (map speciesInfo x)
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
-    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1 -- if not a then s should be 0?
+    p1' = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1
     p1 = map (evalSpecies fitnessFunc) p0
     p1sorted = map sortSpecies p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
@@ -152,8 +152,6 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f,g0,gs') wh
 reproduce :: [Float] -> Config -> Int -> Population -> (Int,Population,[Float])
 reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
-  p_avg_f = p_sum_f / p_size
-  p_size = fromIntegral $ popSize population
   prev_species = map (\(i0,m,a,g,gs) ->
                          let g' = maxFittestGenome (i0,m,a,g,gs)
                          in (i0,m,a,g',[])) -- we need to copy the prev values
@@ -161,8 +159,7 @@ reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   genomes = concat gss
   ((gInnov'',gen'),gss) = mapAccumR (\(gInnov,rs) s@(i0,max_f0,sum_f0,g0,gs0) ->
                                 let avg_f = speciesAvgFitness s
-                                   -- num_offspring = floor $ avg_f / p_avg_f * p_size
-                                    num_offspring = round $ sum_f0 / p_sum_f * p_size
+                                    num_offspring = round $ sum_f0 / p_sum_f * (fromIntegral $ config^.populationSize)
                                     len = length gs0
                                     stud | len >= 5 = [last gs0]
                                          | otherwise = []
@@ -194,17 +191,17 @@ findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,repG,_) -> geneticDiffer
 --the least fit genomes from each species
 --assumes genomes are sorted in ascending order by fitness
 cull :: Int -> Int -> Population -> Population
-cull maxSize maxStag = cullWeakSpecies . 
+cull maxSize maxStag = cullEmpty .
+                       cullWeakSpecies .
                        map (cullSpecies maxSize) .
                        filter (\(i,_,_,_,_) -> i < maxStag)
 
 cullWeakSpecies :: Population -> Population
 cullWeakSpecies pop = p' where
-  p_size = fromIntegral $ popSize pop
-  avg_fs = map speciesAvgFitness pop
-  p_avg_f = sum avg_fs
-  p' = map snd $ filter (\(avg,s) -> floor (avg / p_avg_f * p_size) >= 1) (zip avg_fs pop)
-  
+  p_sum_f = foldl' (\a (_,_,_,_,gs) -> a + sum (map (^.fitness) gs)) 0.0 pop
+  p_avg_f = p_sum_f / (fromIntegral $ popSize pop)
+  p' = map (\(s,m,f,g,gs) -> (s,m,f,g,filter (\x -> (x^.fitness / p_avg_f) >= 0.9) gs)) pop
+
 
 --removes species which no longer have any members
 cullEmpty :: [Species] -> [Species]
@@ -330,17 +327,17 @@ mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate config gInnov genome rs = mutateH gInnov (perturbWeights genome rs) (drop (genome^.genes.to length) rs)
   where
     mutateH gInnov genome (r:rs)
-      | r < 0.47 = uncurry3 (mutate config) $ addLink config gInnov genome rs
-      | r < 0.5 = uncurry3 (mutate config) $ addNode gInnov genome rs
-      | r < 0.6 = uncurry3 (mutate config) $ disableGene gInnov genome rs
-      | r < 0.7 = uncurry3 (mutate config) $ enableGene gInnov genome rs
+      | r < 0.05 = uncurry3 (mutate config) $ addLink config gInnov genome rs
+      | r < 0.08 = uncurry3 (mutate config) $ addNode gInnov genome rs
+--      | r < 0.012 = uncurry3 (mutate config) $ disableGene gInnov genome rs
+--      | r < 0.015 = uncurry3 (mutate config) $ enableGene gInnov genome rs
       | otherwise = (gInnov, genome, r:rs)
     perturbWeights :: Genome -> [Float] -> Genome
     perturbWeights genome rs = genes %~ map (uncurry perturb) . zip rs $ genome
     perturb :: Float -> Gene -> Gene
     perturb r = if smallChange then weight +~ r * 0.4 - 0.2 else weight .~ r * 4.0 - 2.0
       where
-        smallChange = floor (r * 100.0) `mod` 10 > 0
+        smallChange = floor (r * 100.0) > 4
 
 
 -- genome1 MUST be fitter than genome2!
@@ -390,7 +387,7 @@ xor 0 1 = 1
 xor _ _ = 0
 
 inputs :: [[Float]]
-inputs = [[1,0,0],[1,0,1],[1,1,0],[1,1,1]]
+inputs = [[0,0],[0,1],[1,0],[1,1]]
 
 outputs :: [Float]
 outputs = map (foldl1' xor) inputs
