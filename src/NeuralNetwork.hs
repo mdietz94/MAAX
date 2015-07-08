@@ -49,6 +49,20 @@ xorConfig = Config { _numInputs = 2
                    , _sigmoidFunction = sigmoid
                    }
 
+marioConfig = Config { _numInputs = 169
+                     , _numOutputs = 6
+                     , _populationSize = 200
+                     , _speciesMaxSize = 60
+                     , _stagnationMax = 15
+                     , _speciationThreshold = 3.0
+                     , _weightedVsTopology = 0.6
+                     , _crossoverChance = 0.75
+                     , _smallScale = 0.2
+                     , _largeScale = 2.0
+                     , _maxLinkLength= 20
+                     , _sigmoidFunction = sigmoid
+                     }
+
 -- Mutation rates:
 -- 80% of weight mutation
 --     90% being perturbed
@@ -133,10 +147,6 @@ run gen config fitnessFunc gInnov p0 n = trace t $ run gen' config fitnessFunc g
     p1sorted = map sortSpecies p1'
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
     (gInnov',p3,gen') = reproduce gen config gInnov p2
-
--- returns lists of outputs, per species and genome, same order as p0
-step :: Config -> Population -> [Float] -> [[Float]
-step config p0 inputs = map (\(_,_,_,_,gs) -> map (evaluateGenome config inputs) gs) p0
 
 --calculates the fitness of each genome in species
 evalSpecies :: (Genome -> Float) -> Species -> Species

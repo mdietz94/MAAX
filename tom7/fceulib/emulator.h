@@ -24,6 +24,7 @@ struct FCEUGI;
 void Create(char* romfile, uint8* joydata);
 void Destroy(void); 
 unsigned long Save(uint8 **out);
+void Load(uint8 *in);
 
 // Make one emulator step with the given input.
 // Bits from MSB to LSB are

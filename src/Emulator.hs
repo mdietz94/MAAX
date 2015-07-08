@@ -9,7 +9,7 @@ module Emulator where
     import Foreign.Marshal.Array
     import Foreign.Marshal.Alloc
     import Data.Bits.Bitwise (fromListBE)
-    import Data.ByteString (pack, ByteString)
+    import Data.ByteString (pack, ByteString, useAsCString)
 
     data Joystick = Joystick { right  :: Bool
                              , left   :: Bool
@@ -88,9 +88,13 @@ module Emulator where
     stepFull :: Ptr CUChar -> Joystick -> IO [Word8]
     stepFull ptr j = poke ptr (joystickToChar j) >> stepFullC >> getMemory
 
+    load :: ByteString -> IO ()
+    load saveRAW = useAsCString saveRAW (loadC . castPtr)
+
     foreign import ccall "Create" createC :: (CString -> Ptr CUChar -> IO ())
     foreign import ccall "Destroy" destroy :: (IO ())
     foreign import ccall "Save" saveC :: (Ptr (Ptr CUChar) -> IO CLong)
+    foreign import ccall "Load" loadC :: (Ptr CUChar -> IO ())
     foreign import ccall "GetMemory" getMemoryC :: (IO (Ptr CUChar))
     foreign import ccall "GetImage" getImageC :: (IO (Ptr CUChar))
     foreign import ccall "Step" stepC :: (IO ())
