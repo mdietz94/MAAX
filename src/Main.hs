@@ -65,10 +65,14 @@ getSprites mem = map fromJust . filter (/=Nothing) $ enemies
     ey slot = mem!!(0xCF + slot) + 24
 
 getInputs :: [Int] -> [Int]
-getInputs mem = do --[ if (getTile mem (dx,dy)) == 1 && (marioY mem)+dy < 0x1B0 then 1 else | dx <- [-6*16,-5*16..6*16], dy <- [-6*16,-5*16..6*16] ]
+getInputs mem = do
   dx <- [-6*16,-5*16..6*16]
   dy <- [-6*16,-5*16..6*16]
   let tile = getTile mem (dx,dy)
   let dist = map (\(x,y) -> (abs $ x - (marioX mem)+dx, abs $ y - (marioY mem)+ dy)) (getSprites mem)
   let sprite = not . null . filter (\(distx,disty) -> distx < 8 && disty < 8) $ dist
   return $ if tile && (marioY mem) + dy < 0x1B0 then 1 else (if sprite then -1 else 0)
+
+calculateFitness :: [Int] -> Int
+calculateFitness mem = if marX > 3186 then marX + 1000 else marX
+  where marX = marioX mem

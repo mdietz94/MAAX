@@ -134,6 +134,9 @@ run gen config fitnessFunc gInnov p0 n = trace t $ run gen' config fitnessFunc g
     p2 = cull (config ^. speciesMaxSize) (config ^. stagnationMax) p1sorted
     (gInnov',p3,gen') = reproduce gen config gInnov p2
 
+-- returns lists of outputs, per species and genome, same order as p0
+step :: Config -> Population -> [Float] -> [[Float]
+step config p0 inputs = map (\(_,_,_,_,gs) -> map (evaluateGenome config inputs) gs) p0
 
 --calculates the fitness of each genome in species
 evalSpecies :: (Genome -> Float) -> Species -> Species
