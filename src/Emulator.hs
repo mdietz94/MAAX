@@ -74,7 +74,7 @@ module Emulator where
     getImage :: IO [Color]
     getImage = do
         ptr <- getImageC
-        arr <- peekArray (256*266*4) (castPtr ptr)
+        arr <- peekArray (256*256*4) (castPtr ptr)
         return $ toColorList arr
 
     toColorList :: [Word8] -> [Color]

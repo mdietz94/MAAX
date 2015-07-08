@@ -2,17 +2,27 @@ import Emulator
 import NeuralNetwork
 import System.Random
 import Control.Lens
-import qualified Data.ByteString as B (writeFile)
+import qualified Data.ByteString as B (writeFile, pack)
+import Data.List (maximumBy)
 import Data.Maybe (fromJust)
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
+import qualified Vision.Image.Storage.DevIL as F
+import qualified Vision.Image as F
+import Vision.Primitive
+
+getToTheGame 0 ptr = step ptr (Joystick False False False False True False False False)
+getToTheGame n ptr = step ptr defaultJoystick >> getToTheGame (n-1) ptr
 
 runMario genome = do
   ptr <- malloc
   create "superMario.nes" ptr
+  getToTheGame 30 ptr
   mem <- getMemory
-  memFinal <- loop (30*60) ptr mem
+  memFinal <- loop (10*60) ptr mem
+  img <- getImage
   destroy
+  putStrLn . ("My Fitness: "++) . show . calculateFitness . map fromIntegral $ memFinal
   return ( fitness .~ calculateFitness (map fromIntegral memFinal) $ genome )
     where
       loop 0 _ _ = getMemory
@@ -22,28 +32,38 @@ runMario genome = do
 runMarioSpecies :: Species -> IO Species
 runMarioSpecies (s,m,fit,rep,gen) = do
   gen' <- sequence . map runMario $ gen
-  return (s,m,fit,rep,gen')
+  let n = fromIntegral $ length gen'
+  let sum_f = foldl (\a g -> a + g^.fitness) 0.0 gen'
+  let max_g = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gen'
+  return (s,max_g^.fitness,sum_f,max_g,gen')
 
 stepMarioNetwork (gInnov,p0,gen) = do
   p1 <- sequence . map runMarioSpecies $ p0
   let stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
   let p2 = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1
   let p3 = map sortSpecies p2
+  putStrLn . show $ p3
   let p4 = cull (marioConfig^.speciesMaxSize) (marioConfig^.stagnationMax) p3
+  putStrLn . ("Top Fitness: " ++) . show . (^.fitness) . fittestGenome $ p4
   return ( reproduce gen marioConfig gInnov p4 )
 
 runMarioNetwork 0 (_,p0,_) = return p0
 runMarioNetwork n st = runMarioNetwork (n-1) =<< stepMarioNetwork st
 
+ptToPix img (Z :. y :. x) = F.RGBAPixel r g b a
+  where
+    Color r g b a = img !! (256*y+x)
+
 main = do
-  let gen = randomRs (0.0,1.0) $ mkStdGen 23
+  let gen = randomRs (0.0,1.0) $ mkStdGen 2123
   let (gInnov,p0) = initPopulation gen marioConfig
-  finalPop <- runMarioNetwork 50 (gInnov,p0,gen)
+  finalPop <- runMarioNetwork 1 (gInnov,p0,gen)
   let bestGenome = fittestGenome $ finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
   putStrLn . show $ bestGenome
-
-
+  img <- getImage
+  let imgRAW = F.fromFunction (Z :. 256 :. 256) (ptToPix img) :: F.RGBA
+  F.save (F.PNG) "screenGrab.png" imgRAW
 
 {-
    Here is some specific Mario code.  Meant to be used in tested Neural Network before we get the ability to get data from the screen.
