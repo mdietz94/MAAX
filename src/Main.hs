@@ -18,6 +18,13 @@ getToTheGame n
  | n < 20 = stepFull (Joystick False False False False True False False False) >> getToTheGame (n-1)
  | otherwise = stepFull defaultJoystick >> getToTheGame (n-1)
 
+getToTheGameRecord n
+ | n == 0 = [defaultJoystick]
+ | n < 5 = (Joystick False False False False True False False False) : getToTheGameRecord (n-1)
+ | n < 10 = defaultJoystick : getToTheGameRecord (n-1)
+ | n < 20 = (Joystick False False False False True False False False) : getToTheGameRecord (n-1)
+ | otherwise = defaultJoystick : getToTheGameRecord (n-1)
+
 runMario genome = do
   create "superMario.nes"
   getToTheGame 100
@@ -55,17 +62,32 @@ stepMarioNetwork (gInnov,p0,gen) = do
 runMarioNetwork 0 (_,p0,_) = return p0
 runMarioNetwork n st = runMarioNetwork (n-1) =<< stepMarioNetwork st
 
+recordMario genome = do
+  create "superMario.nes"
+  let startData = getToTheGameRecord 100
+  getToTheGame 100
+  mem <- getMemory
+  outs <- loop (30*60) mem
+  destroy
+  return $ startData ++ outs
+    where
+      loop 0 _ = return []
+      loop n mem = step (outputs mem) >>= loop (n-1) >>= (\xs -> return $ (outputs mem) : xs)
+      outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
+
 ptToPix img (Z :. y :. x) = F.RGBAPixel r g b a
   where
     Color r g b a = img !! (256*y+x)
 
 main = do
-  let gen = randomRs (0.0,1.0) $ mkStdGen 2123
-  let (gInnov,p0) = initPopulation gen (set populationSize 1 marioConfig)
-  finalPop <- runMarioNetwork 20 (gInnov,p0,gen)
+  let gen = randomRs (0.0,1.0) $ mkStdGen 23
+  let (gInnov,p0) = initPopulation gen marioConfig
+  finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
   let bestGenome = fittestGenome $ finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
   putStrLn . show $ bestGenome
+  joydata <- recordMario bestGenome
+  saveAsFM2 "best.fm2" joydata
 
 {-
    Here is some specific Mario code.  Meant to be used in tested Neural Network before we get the ability to get data from the screen.
