@@ -93,12 +93,25 @@ main = do
   joydata <- recordMario bestGenome
   saveAsFM2 "best.fm2" joydata
 
+loadPop = do
+  p0 <- loadPopulation "last_population.bin"
+  let gInnov = maximum . map _innovation  .concatMap _genes . concatMap (\(_,_,_,_,gs) -> gs) $ p0
+  let gen = randomRs (0.0,1.0) $ mkStdGen 23
+  finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
+  let bestGenome = fittestGenome $ finalPop
+  putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
+  savePopulation "last_population.bin" finalPop
+  joydata <- recordMario bestGenome
+  saveAsFM2 "best.fm2" joydata
+
 {-
    Here is some specific Mario code.  Meant to be used in tested Neural Network before we get the ability to get data from the screen.
 -}
 
 marioX :: [Int] -> Int
-marioX mem = (mem!!0x6D) * 0x100 + (mem!!0x86)
+marioX mem = (mem!!0x6D) * 0x100 + toSigned (mem!!0x86)
+  where
+    toSigned x = if x < 128 then x else x - 256
 
 marioY :: [Int] -> Int
 marioY mem = (mem!!0x03B8) + 16

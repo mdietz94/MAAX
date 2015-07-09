@@ -52,7 +52,7 @@ xorConfig = Config { _numInputs = 2
 
 marioConfig = Config { _numInputs = 169
                      , _numOutputs = 6
-                     , _populationSize = 100
+                     , _populationSize = 30
                      , _speciesMaxSize = 60
                      , _stagnationMax = 15
                      , _speciationThreshold = 3.0
@@ -138,6 +138,9 @@ type Species = ( Int                 --stagnation
 
 savePopulation :: String -> Population -> IO ()
 savePopulation = encodeFile
+
+loadPopulation :: String -> IO Population
+loadPopulation = decodeFile
 
 --creates initial population
 --random generator, intial size, num inputs, num outputs
