@@ -11,22 +11,27 @@ import qualified Vision.Image.Storage.DevIL as F
 import qualified Vision.Image as F
 import Vision.Primitive
 
-getToTheGame 0 ptr = step ptr (Joystick False False False False True False False False)
-getToTheGame n ptr = step ptr defaultJoystick >> getToTheGame (n-1) ptr
+getToTheGame n
+ | n == 0 = stepFull defaultJoystick
+ | n < 5 = stepFull (Joystick False False False False True False False False) >> getToTheGame (n-1)
+ | n < 10 = stepFull defaultJoystick >> getToTheGame (n-1)
+ | n < 20 = stepFull (Joystick False False False False True False False False) >> getToTheGame (n-1)
+ | otherwise = stepFull defaultJoystick >> getToTheGame (n-1)
 
 runMario genome = do
-  ptr <- malloc
-  create "superMario.nes" ptr
-  getToTheGame 30 ptr
+  create "superMario.nes"
+  getToTheGame 100
   mem <- getMemory
-  memFinal <- loop (10*60) ptr mem
-  img <- getImage
+  memFinal <- loop (10*60) mem
+--  img <- getImage
+--  let imgRAW = F.fromFunction (Z :. 256 :. 256) (ptToPix img) :: F.RGBA
+--  F.save (F.PNG) "screenGrab.png" imgRAW
   destroy
   putStrLn . ("My Fitness: "++) . show . calculateFitness . map fromIntegral $ memFinal
   return ( fitness .~ calculateFitness (map fromIntegral memFinal) $ genome )
     where
-      loop 0 _ _ = getMemory
-      loop n ptr mem = step ptr (outputs mem) >>= loop (n-1) ptr
+      loop 0 _ = getMemory
+      loop n mem = stepFull (outputs mem) >>= loop (n-1)
       outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
 
 runMarioSpecies :: Species -> IO Species
@@ -56,14 +61,11 @@ ptToPix img (Z :. y :. x) = F.RGBAPixel r g b a
 
 main = do
   let gen = randomRs (0.0,1.0) $ mkStdGen 2123
-  let (gInnov,p0) = initPopulation gen marioConfig
-  finalPop <- runMarioNetwork 1 (gInnov,p0,gen)
+  let (gInnov,p0) = initPopulation gen (set populationSize 1 marioConfig)
+  finalPop <- runMarioNetwork 20 (gInnov,p0,gen)
   let bestGenome = fittestGenome $ finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
   putStrLn . show $ bestGenome
-  img <- getImage
-  let imgRAW = F.fromFunction (Z :. 256 :. 256) (ptToPix img) :: F.RGBA
-  F.save (F.PNG) "screenGrab.png" imgRAW
 
 {-
    Here is some specific Mario code.  Meant to be used in tested Neural Network before we get the ability to get data from the screen.

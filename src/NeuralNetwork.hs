@@ -51,7 +51,7 @@ xorConfig = Config { _numInputs = 2
 
 marioConfig = Config { _numInputs = 169
                      , _numOutputs = 6
-                     , _populationSize = 10
+                     , _populationSize = 100
                      , _speciesMaxSize = 60
                      , _stagnationMax = 15
                      , _speciationThreshold = 3.0

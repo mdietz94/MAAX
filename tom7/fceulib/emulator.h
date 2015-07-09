@@ -20,9 +20,10 @@ using namespace std;
 
 struct FCEUGI;
 
+uint32 joydata = 0;
 // Initializes the emulator
-void Create(char* romfile, uint8* joydata);
-void Destroy(void); 
+void Create(char* romfile);
+void Destroy(void);
 unsigned long Save(uint8 **out);
 void Load(uint8 *in);
 
@@ -32,14 +33,14 @@ void Load(uint8 *in);
 //
 // Consider StepFull if you want video or CachingStep if you
 // are doing search and might execute this same step again.
-void Step(void);
+void Step(uint8);
 uint8* GetMemory(void);
 
 // Fancy stuff.
 
 // Same, but run the video and sound code as well. This is slower,
 // but allows calling GetImage and GetSound.
-void StepFull(void);
+void StepFull(uint8);
 
 // Get image. StepFull must have been called to produce this frame,
 // or else who knows what's in there? Size is 256 x 256 pixels,

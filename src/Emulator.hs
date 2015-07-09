@@ -42,20 +42,19 @@ module Emulator where
 
     runProgram :: String -> ([Word8] -> Joystick) -> Int -> IO ByteString
     runProgram name func frames = do
-        ptr <- malloc
-        create name ptr
+        create name
         mem <- getMemory
-        saveData <- loopProgram ptr func mem frames
+        saveData <- loopProgram func mem frames
         destroy
         return saveData
         where
-            loopProgram _ _ _ 0 = save
-            loopProgram ptr f mem n = do
-                mem' <- step ptr (f mem)
-                loopProgram ptr f mem' (n-1)
+            loopProgram _ _ 0 = save
+            loopProgram f mem n = do
+                mem' <- step (f mem)
+                loopProgram f mem' (n-1)
 
-    create :: String -> Ptr CUChar -> IO ()
-    create name ptr = withCString name $ flip createC ptr
+    create :: String -> IO ()
+    create name = withCString name createC
 
     save :: IO ByteString
     save = do
@@ -82,22 +81,22 @@ module Emulator where
     toColorList [r,g,b,a] = [Color r g b a]
     toColorList xs = toColorList (take 4 xs) ++ toColorList (drop 4 xs)
 
-    step :: Ptr CUChar -> Joystick -> IO [Word8]
-    step ptr j = poke ptr (joystickToChar j) >> stepC >> getMemory
+    step :: Joystick -> IO [Word8]
+    step j = stepC (joystickToChar j) >> getMemory
 
-    stepFull :: Ptr CUChar -> Joystick -> IO [Word8]
-    stepFull ptr j = poke ptr (joystickToChar j) >> stepFullC >> getMemory
+    stepFull :: Joystick -> IO [Word8]
+    stepFull j = stepFullC (joystickToChar j) >> getMemory
 
     load :: ByteString -> IO ()
     load saveRAW = useAsCString saveRAW (loadC . castPtr)
 
-    foreign import ccall "Create" createC :: (CString -> Ptr CUChar -> IO ())
+    foreign import ccall "Create" createC :: (CString -> IO ())
     foreign import ccall "Destroy" destroy :: (IO ())
     foreign import ccall "Save" saveC :: (Ptr (Ptr CUChar) -> IO CLong)
     foreign import ccall "Load" loadC :: (Ptr CUChar -> IO ())
     foreign import ccall "GetMemory" getMemoryC :: (IO (Ptr CUChar))
     foreign import ccall "GetImage" getImageC :: (IO (Ptr CUChar))
-    foreign import ccall "Step" stepC :: (IO ())
-    foreign import ccall "StepFull" stepFullC :: (IO ())
+    foreign import ccall "Step" stepC :: (CUChar -> IO ())
+    foreign import ccall "StepFull" stepFullC :: (CUChar -> IO ())
     foreign import ccall "RamChecksum" ramChecksum :: (IO CLong)
     foreign import ccall "ImageChecksum" imageChecksum :: (IO CLong)
