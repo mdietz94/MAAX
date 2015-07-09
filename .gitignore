@@ -20,5 +20,3 @@ cabal.sandbox.config
 *.swp
 *.swo
 *~
-
-*.so
