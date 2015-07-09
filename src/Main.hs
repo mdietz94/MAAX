@@ -85,7 +85,7 @@ main = do
   finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
   let bestGenome = fittestGenome $ finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
-  putStrLn . show $ bestGenome
+  savePopulation "last_population.bin" finalPop
   joydata <- recordMario bestGenome
   saveAsFM2 "best.fm2" joydata
 

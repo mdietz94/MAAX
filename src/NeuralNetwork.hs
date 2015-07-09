@@ -10,6 +10,7 @@ import Control.Lens
 import Control.Arrow ((&&&))
 import Numeric
 import Debug.Trace
+import Data.Binary
 
 
 data Config = Config { _numInputs            :: Int
@@ -80,6 +81,26 @@ data Gene = Gene { _input      :: Int
                  , _innovation :: Int } deriving (Eq)
 makeClassy ''Gene
 
+instance Show Gene where
+    show (Gene inp out wt e i)
+      | e = "[x]" ++ show i ++ ": " ++ show inp ++ " --> " ++ show wt ++ " --> " ++ show out
+      | otherwise = "[ ]" ++ show i
+
+instance Binary Gene where
+  put g = do
+    put $ g^.input
+    put $ g^.output
+    put $ g^.weight
+    put $ g^.enabled
+    put $ g^.innovation
+  get = do
+    bInput <- get
+    bOutput <- get
+    bWeight <- get
+    bEnabled <- get
+    bInnovation <- get
+    return $ Gene bInput bOutput bWeight bEnabled bInnovation
+
 data Genome = Genome { _fitness :: Float
                      , _numnodes :: Int
                      , _genes :: [Gene]
@@ -87,17 +108,26 @@ data Genome = Genome { _fitness :: Float
 makeClassy ''Genome
 
 instance Show Genome where
-    show (Genome f n gs) = "Genome[" ++ formatFloatN f 4 ++ "] [" ++show n ++
-                          "]{" ++ concatMap (\g -> "\n" ++ show g) gs ++ "\n}"
+  show (Genome f n gs) = "Genome[" ++ formatFloatN f 4 ++ "] [" ++show n ++
+                         "]{" ++ concatMap (\g -> "\n" ++ show g) gs ++ "\n}"
 
-instance Show Gene where
-    show (Gene inp out wt e i)
-      | e = "[x]" ++ show i ++ ": " ++ show inp ++ " --> " ++ show wt ++ " --> " ++ show out
-      | otherwise = "[ ]" ++ show i
+instance Binary Genome where
+  put g = do
+    put $ g^.fitness
+    put $ g^.numnodes
+    put . length $ g^.genes
+    sequence . map put $ g^.genes
+    return ()
+
+  get = do
+    bFitness <- get
+    bNodes <- get
+    lenGenes <- get :: Get Int
+    genes <- sequence [ get | _ <- [1..lenGenes] ]
+    return $ Genome bFitness bNodes genes
+
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
-
-
 
 type Population = [Species]
 type Species = ( Int                 --stagnation
@@ -106,6 +136,8 @@ type Species = ( Int                 --stagnation
                , Genome              --representative genome
                , [Genome])           --rest of genomes
 
+savePopulation :: String -> Population -> IO ()
+savePopulation = encodeFile
 
 --creates initial population
 --random generator, intial size, num inputs, num outputs
@@ -421,3 +453,4 @@ speciesInfo (a,b,c,d,e) = "stag[" ++ show a ++ "]\tmax fit[" ++ formatFloatN b 4
 
 
 formatFloatN floatNum numOfDecimals = showFFloat (Just numOfDecimals) floatNum ""
+
