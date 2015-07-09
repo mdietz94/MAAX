@@ -7,6 +7,7 @@ import Data.List (maximumBy)
 import Data.Maybe (fromJust)
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
+import Control.Exception (AsyncException(..),catch,throw)
 import qualified Vision.Image.Storage.DevIL as F
 import qualified Vision.Image as F
 import Vision.Primitive
@@ -60,7 +61,10 @@ stepMarioNetwork (gInnov,p0,gen) = do
   return ( reproduce gen marioConfig gInnov p4 )
 
 runMarioNetwork 0 (_,p0,_) = return p0
-runMarioNetwork n st = runMarioNetwork (n-1) =<< stepMarioNetwork st
+runMarioNetwork n st@(_,p0,_) = (runMarioNetwork (n-1) =<< stepMarioNetwork st) `catch` handleUserInterrupt
+  where
+    handleUserInterrupt UserInterrupt = return p0
+    handleUserInterrupt e = throw e
 
 recordMario genome = do
   create "superMario.nes"
