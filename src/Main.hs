@@ -26,20 +26,25 @@ getToTheGameRecord n
  | n < 20 = (Joystick False False False False True False False False) : getToTheGameRecord (n-1)
  | otherwise = defaultJoystick : getToTheGameRecord (n-1)
 
+drawImage name = do
+  img <- getImage
+  let imgRAW = F.fromFunction (Z :. 256 :. 256) (ptToPix img) :: F.RGBA
+  F.save (F.PNG) (name ++ ".png") imgRAW
+
 runMario genome = do
   create "superMario.nes"
   getToTheGame 100
   mem <- getMemory
-  memFinal <- loop (10*60) mem
---  img <- getImage
---  let imgRAW = F.fromFunction (Z :. 256 :. 256) (ptToPix img) :: F.RGBA
---  F.save (F.PNG) "screenGrab.png" imgRAW
+  ftns <- loop (10*60) mem 0.0
   destroy
-  putStrLn . ("My Fitness: "++) . show . calculateFitness . map fromIntegral $ memFinal
-  return ( fitness .~ calculateFitness (map fromIntegral memFinal) $ genome )
+  putStrLn . ("My Fitness: "++) . show $ ftns
+  return ( fitness .~ ftns $ genome ) -- calculateFitness (map fromIntegral memFinal) $ genome )
     where
-      loop 0 _ = getMemory
-      loop n mem = stepFull (outputs mem) >>= loop (n-1)
+      loop 0 _ f = return f
+      loop n mem m_fit = do
+        mem' <- stepFull (outputs mem)
+        let fit = calculateFitness . map fromIntegral $ mem'
+        loop (n-1) mem' (max fit m_fit)
       outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
 
 runMarioSpecies :: Species -> IO Species
