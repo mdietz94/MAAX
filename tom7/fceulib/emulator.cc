@@ -22,9 +22,9 @@
 // extern uint8 *XBuf, *XBackBuf;
 
 uint8* GetMemory() {
-  uint8* mem = (uint8*)malloc(0x800);
-  memcpy(mem, RAM, 0x800);
-  return mem;
+  //uint8* mem = (uint8*)malloc(0x800);
+  //memcpy(mem, RAM, 0x800);
+  return RAM;
 }
 
 static inline uint64 MD5ToChecksum(const uint8 digest[16]) {
