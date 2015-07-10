@@ -77,6 +77,7 @@ executable MAAX-master
                      , binary
                      , socket
                      , network
+                     , async
   hs-source-dirs:      src
   default-language:    Haskell2010
   extra-lib-dirs:      ./tom7
