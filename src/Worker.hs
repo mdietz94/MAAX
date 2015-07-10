@@ -1,18 +1,33 @@
-{-# LANGUAGE OverloadedStrings #-}
 
 import Types
-import Mario
+import qualified Mario as M
 
-import Network.Wai (responseLBS, Application)
-import Network.Wai.Handler.Warp (run)
-import Network.HTTP.Types (status200)
-import Network.HTTP.Types.Header (hContentType)
+import Debug.Trace
 
-main = do
-    let port = 3000
-    putStrLn $ "Listening for genomes on port " ++ show port
-    run port app
+import Network.Socket
+import Control.Concurrent
+import System.IO
+ 
+main = withSocketsDo $ do
+    sock <- socket AF_INET Stream 0
+    setSocketOption sock ReuseAddr 1
+    bindSocket sock (SockAddrInet 3000 iNADDR_ANY)
+    listen sock 2
+    loop sock
 
-app :: Application
-app req f =
-    f $ responseLBS status200 [(hContentType, "text/plain")] "Hello world!"
+loop :: Socket -> IO ()
+loop sock = do
+  conn <- accept sock
+  forkIO (runConn conn)
+  loop sock
+
+runConn :: (Socket, SockAddr) -> IO ()
+runConn (sock,_) = do
+  handle <- socketToHandle sock ReadWriteMode
+  hSetBuffering handle NoBuffering
+  cnts <- hGetContents handle
+  print cnts
+  hClose handle
+
+ 
+msg = "Pong!\r\n"
