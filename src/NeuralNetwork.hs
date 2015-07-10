@@ -1,32 +1,16 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE BangPatterns #-}
 
 module NeuralNetwork where
 
+import Types
 import Emulator
 import Data.List
 import Data.Maybe
 import Control.Lens
 import Control.Arrow ((&&&))
-import Numeric
 import Debug.Trace
 import Data.Binary
 
 
-data Config = Config { _numInputs            :: Int
-                     , _numOutputs           :: Int
-                     , _populationSize       :: Int
-                     , _speciesMaxSize       :: Int
-                     , _stagnationMax        :: Int
-                     , _speciationThreshold  :: Float
-                     , _weightedVsTopology   :: Float
-                     , _crossoverChance      :: Float
-                     , _smallScale           :: Float
-                     , _largeScale           :: Float
-                     , _maxLinkLength        :: Int
-                     , _sigmoidFunction      :: Float -> Float
-                     }
-makeClassy ''Config
 
 -- sigmoid step function
 sigmoid :: Float -> Float
@@ -73,58 +57,6 @@ marioConfig = Config { _numInputs = 169
 -- 0.1% interspecies mating rate
 -- 3% chance of adding new node
 -- 5% chance of adding new link
-
-data Gene = Gene { _input      :: Int
-                 , _output     :: Int
-                 , _weight     :: Float
-                 , _enabled    :: Bool
-                 , _innovation :: Int } deriving (Eq)
-makeClassy ''Gene
-
-instance Show Gene where
-    show (Gene inp out wt e i)
-      | e = "[x]" ++ show i ++ ": " ++ show inp ++ " --> " ++ show wt ++ " --> " ++ show out
-      | otherwise = "[ ]" ++ show i
-
-instance Binary Gene where
-  put g = do
-    put $ g^.input
-    put $ g^.output
-    put $ g^.weight
-    put $ g^.enabled
-    put $ g^.innovation
-  get = do
-    bInput <- get
-    bOutput <- get
-    bWeight <- get
-    bEnabled <- get
-    bInnovation <- get
-    return $ Gene bInput bOutput bWeight bEnabled bInnovation
-
-data Genome = Genome { _fitness :: Float
-                     , _numnodes :: Int
-                     , _genes :: [Gene]
-                     } deriving (Eq)
-makeClassy ''Genome
-
-instance Show Genome where
-  show (Genome f n gs) = "Genome[" ++ formatFloatN f 4 ++ "] [" ++show n ++
-                         "]{" ++ concatMap (\g -> "\n" ++ show g) gs ++ "\n}"
-
-instance Binary Genome where
-  put g = do
-    put $ g^.fitness
-    put $ g^.numnodes
-    put . length $ g^.genes
-    sequence . map put $ g^.genes
-    return ()
-
-  get = do
-    bFitness <- get
-    bNodes <- get
-    lenGenes <- get :: Get Int
-    genes <- sequence [ get | _ <- [1..lenGenes] ]
-    return $ Genome bFitness bNodes genes
 
 
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
@@ -451,9 +383,5 @@ fitnessXor config g = let genome_outs = concatMap (flip (evaluateGenome config) 
                       in (4 - sum (map abs (zipWith (-) outputs genome_outs))) ^ 2
 
 speciesInfo :: Species -> String
-speciesInfo (a,b,c,d,e) = "stag[" ++ show a ++ "]\tmax fit[" ++ formatFloatN b 4 ++
-      "]\tsum fit[" ++ formatFloatN c 4 ++ "]\tsize[" ++ show (length e) ++ "]"
-
-
-formatFloatN floatNum numOfDecimals = showFFloat (Just numOfDecimals) floatNum ""
-
+speciesInfo (a,b,c,d,e) = "stag[" ++ show a ++ "]\tmax fit[" ++ fmtFloatN b 4 ++
+      "]\tsum fit[" ++ fmtFloatN c 4 ++ "]\tsize[" ++ show (length e) ++ "]"

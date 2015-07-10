@@ -1,4 +1,5 @@
 import Emulator
+import Types
 import NeuralNetwork
 import System.Random
 import Control.Lens
