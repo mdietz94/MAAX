@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import Mario
 import Types
 
 import Control.Concurrent
@@ -11,9 +10,10 @@ import Control.Monad
 import Data.Binary 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as B
+import Data.ByteString.Char8 (hPutStrLn)
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import Network.Socket.ByteString
-import System.IO
+import System.IO hiding (hPutStrLn)
 
 
 ips = ["127.0.0.1","127.0.0.1"]
@@ -48,13 +48,13 @@ sender ntodo done addr = do
           (n,todo) <- takeMVar ntodo
           if n < 1
             then let z = strictEncode (0 :: Int)
-                 in B.hPutStrLn handle z >> putMVar ntodo (n,todo)
+                 in hPutStrLn handle z >> putMVar ntodo (n,todo)
             else do g <- readChan todo
                     putMVar ntodo (n-1,todo)
                     print n
                     let str = strictEncode g
                     let gbytes = strictEncode $ B.length str
-                    B.hPutStrLn handle gbytes
+                    hPutStrLn handle gbytes
                     B.hPut handle str
                     putStrLn $ "sent " ++ show (B.length str)
                     rb <- B.hGetLine handle

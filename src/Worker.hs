@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 import Types
 import qualified Mario as M
 
@@ -10,10 +11,11 @@ import Control.Monad
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as B
+import Data.ByteString.Char8 (hPutStrLn)
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import Network.Socket.ByteString
 import Control.Concurrent
-import System.IO
+import System.IO hiding (hPutStrLn)
 
 
 --TODO exception and error safe
@@ -50,7 +52,7 @@ runConn (sock,_) = do
                       g0 <- strictDecode <$> return str :: IO Genome
                       g1 <- strictEncode <$> M.runMario g0
                       let g1bytes = strictEncode $ B.length g1
-                      B.hPutStrLn handle g1bytes
+                      hPutStrLn handle g1bytes
                       B.hPut handle g1
                       putStrLn $ "sent " ++ show (B.length g1)
                       loopH handle
