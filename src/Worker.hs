@@ -6,6 +6,7 @@ import Debug.Trace
 
 import Data.Binary
 import Control.Lens 
+import Control.Monad
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as B
@@ -28,7 +29,7 @@ main = withSocketsDo $ do
 loop :: Socket -> IO ()
 loop sock = do
   conn <- accept sock
-  print $ "Connection accepted: " ++ show conn
+  putStrLn $ "Connection accepted: " ++ show conn
   runConn conn
   loop sock
 
@@ -42,16 +43,17 @@ runConn (sock,_) = do
   where loopH handle = do
           numbytes <- B.hGetLine handle
           let nbytes = strictDecode numbytes
-          print $ "receiving " ++ show nbytes
-          str <- B.hGet handle nbytes
-          g0 <- strictDecode <$> return str :: IO Genome
-          g1 <- strictEncode <$> M.runMario g0
-          let g1bytes = strictEncode $ B.length g1
-          print $ "sending " ++ show (B.length g1)
-          B.hPutStrLn handle g1bytes
-          B.hPut handle g1
-          loopH handle
-    
+          unless (nbytes < 1)
+                 $ do str <- B.hGet handle nbytes
+                      putStrLn $ "received " ++ show nbytes
+                      g0 <- strictDecode <$> return str :: IO Genome
+                      g1 <- strictEncode <$> M.runMario g0
+                      let g1bytes = strictEncode $ B.length g1
+                      B.hPutStrLn handle g1bytes
+                      B.hPut handle g1
+                      putStrLn $ "sent " ++ show (B.length g1)
+                      loopH handle
+  
 
 strictEncode :: Binary a => a -> B.ByteString
 strictEncode = BL.toStrict . encode

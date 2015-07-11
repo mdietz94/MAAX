@@ -46,22 +46,24 @@ sender ntodo done addr = do
   where loop :: Handle -> IO ()
         loop handle = do
           (n,todo) <- takeMVar ntodo
-          if n < 1 then void $ putMVar ntodo (n,todo)
-                   else do g <- readChan todo
-                           putMVar ntodo (n-1,todo)
-                           print n
-                           let str = strictEncode g
-                           let gbytes = strictEncode $ B.length str
-                           print $ "sending " ++ show (B.length str)
-                           B.hPutStrLn handle gbytes
-                           B.hPut handle str
-                           rb <- B.hGetLine handle
-                           let rbytes = strictDecode rb
-                           print $ "receiving " ++ show rbytes
-                           resp <- B.hGet handle rbytes
-                           result <- strictDecode <$> return resp 
-                           writeChan done result
-                           loop handle
+          if n < 1
+            then let z = strictEncode (0 :: Int)
+                 in B.hPutStrLn handle z >> putMVar ntodo (n,todo)
+            else do g <- readChan todo
+                    putMVar ntodo (n-1,todo)
+                    print n
+                    let str = strictEncode g
+                    let gbytes = strictEncode $ B.length str
+                    B.hPutStrLn handle gbytes
+                    B.hPut handle str
+                    putStrLn $ "sent " ++ show (B.length str)
+                    rb <- B.hGetLine handle
+                    let rbytes = strictDecode rb
+                    resp <- B.hGet handle rbytes
+                    putStrLn $ "received " ++ show rbytes
+                    result <- strictDecode <$> return resp 
+                    writeChan done result
+                    loop handle
     
 
 strictEncode :: Binary a => a -> B.ByteString
@@ -71,9 +73,9 @@ strictDecode = decode . BL.fromStrict
 
 
 readNextN :: Chan a -> Int -> IO [a]
+readNextN _ 0 = return []
 readNextN ch n = readChan ch >>= \x -> (x:) <$> readNextN ch (n - 1)
                    
-
 
 testGenome :: Genome
 testGenome = Genome 0 (om + 1) gs1 where
