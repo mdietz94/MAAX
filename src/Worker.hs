@@ -1,16 +1,22 @@
-
+{-# LANGUAGE OverloadedStrings #-}
 import Types
 import qualified Mario as M
 
 import Debug.Trace
 
 import Data.Binary
-import qualified Data.ByteString.Lazy as B
-import Network.Socket
+import Control.Lens 
+import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString as B
+import Network.Socket hiding (send, sendTo, recv, recvFrom)
+import Network.Socket.ByteString
 import Control.Concurrent
 import System.IO
 
 
+--TODO exception and error safe
+--TODO B.hPutStrLn deprecated?
 main = withSocketsDo $ do
     sock <- socket AF_INET Stream 0
     setSocketOption sock ReuseAddr 1
@@ -22,18 +28,32 @@ main = withSocketsDo $ do
 loop :: Socket -> IO ()
 loop sock = do
   conn <- accept sock
-  forkIO (runConn conn)
+  print $ "Connection accepted: " ++ show conn
+  runConn conn
   loop sock
 
-
+--deal with EOF
 runConn :: (Socket, SockAddr) -> IO ()
 runConn (sock,_) = do
   handle <- socketToHandle sock ReadWriteMode
   hSetBuffering handle NoBuffering
-  g0 <- decode <$> B.hGetContents handle :: IO Genome
-  g1 <- M.runMario g0
-  B.hPut handle (encode g1)
+  loopH handle
   hClose handle
+  where loopH handle = do
+          numbytes <- B.hGetLine handle
+          let nbytes = strictDecode numbytes
+          print $ "receiving " ++ show nbytes
+          str <- B.hGet handle nbytes
+          g0 <- strictDecode <$> return str :: IO Genome
+          g1 <- strictEncode <$> M.runMario g0
+          let g1bytes = strictEncode $ B.length g1
+          print $ "sending " ++ show (B.length g1)
+          B.hPutStrLn handle g1bytes
+          B.hPut handle g1
+          loopH handle
+    
 
- 
-msg = "Pong!\r\n"
+strictEncode :: Binary a => a -> B.ByteString
+strictEncode = BL.toStrict . encode
+strictDecode :: Binary a => B.ByteString -> a
+strictDecode = decode . BL.fromStrict
