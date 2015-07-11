@@ -42,6 +42,49 @@ executable MAAX
     -- -rtsopts
     -- "-with-rtsopts=-N -p -s -h -i0.1"
 
+executable MAAX-worker
+  main-is:             Worker.hs
+  other-extensions:    OverloadedStrings, TemplateHaskell
+  build-depends:       base >=4.8 && <4.9
+                     , bitwise >=0.1 && <0.2
+                     , bytestring
+                     , random
+                     , containers
+                     , lens
+                     , friday
+                     , friday-devil
+                     , binary
+                     , socket
+                     , network
+                     , unix
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+  extra-lib-dirs:      ./tom7
+  extra-libraries:     emulator
+  ghc-options: -O2
+
+executable MAAX-master
+  main-is:             Master.hs
+  other-extensions:    OverloadedStrings, TemplateHaskell
+  build-depends:       base >=4.8 && <4.9
+                     , bitwise >=0.1 && <0.2
+                     , bytestring
+                     , random
+                     , containers
+                     , lens
+                     , friday
+                     , friday-devil
+                     , binary
+                     , socket
+                     , network
+                     , async
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+  extra-lib-dirs:      ./tom7
+  extra-libraries:     emulator
+  ghc-options: -O2
+
+
 source-repository head
   type:                git
   location:            https://github.com/mdietz94/MAAX.git
