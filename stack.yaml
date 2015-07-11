@@ -4,6 +4,7 @@ packages:
 extra-deps: [
   'friday-0.2.2.0',
   'friday-devil-0.1.1.1',
-  'ratio-int-0.1.2'
+  'ratio-int-0.1.2',
+  'socket-0.5.1.0'
 ]
 resolver: nightly-2015-06-24
