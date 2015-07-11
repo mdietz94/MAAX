@@ -31,6 +31,7 @@ loop sock = do
   conn <- accept sock
   putStrLn $ "Connection accepted: " ++ show conn
   runConn conn
+  --forkIO (runConn conn)  --segmentation fault
   loop sock
 
 --deal with EOF
