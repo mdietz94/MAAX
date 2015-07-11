@@ -34,8 +34,7 @@ run ips genomes = do
   readNextN done (length genomes)
 
 
---TODO exception and error sage
---TODO B.hPutStrLn deprecated?
+--TODO exception and error safe
 sender :: MVar (Int,Chan Genome) -> Chan Genome -> HostAddress -> IO ()
 sender ntodo done addr = do
   sock <- socket AF_INET Stream 0
@@ -52,18 +51,23 @@ sender ntodo done addr = do
             else do g <- readChan todo
                     putMVar ntodo (n-1,todo)
                     print n
-                    let str = strictEncode g
-                    let gbytes = strictEncode $ B.length str
-                    hPutStrLn handle gbytes
-                    B.hPut handle str
-                    putStrLn $ "sent " ++ show (B.length str)
-                    rb <- B.hGetLine handle
-                    let rbytes = strictDecode rb
-                    resp <- B.hGet handle rbytes
-                    putStrLn $ "received " ++ show rbytes
-                    result <- strictDecode <$> return resp 
+                    result <- sendGenome handle g
                     writeChan done result
                     loop handle
+
+
+sendGenome :: Handle -> Genome -> IO Genome
+sendGenome handle g = do 
+  let str = strictEncode g
+      gbytes = strictEncode $ B.length str
+  hPutStrLn handle gbytes
+  B.hPut handle str
+  putStrLn $ "sent " ++ show (B.length str)
+  rb <- B.hGetLine handle
+  let rbytes = strictDecode rb
+  resp <- B.hGet handle rbytes
+  putStrLn $ "received " ++ show rbytes
+  return $ strictDecode resp 
     
 
 strictEncode :: Binary a => a -> B.ByteString

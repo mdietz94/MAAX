@@ -19,7 +19,6 @@ import System.IO hiding (hPutStrLn)
 
 
 --TODO exception and error safe
---TODO B.hPutStrLn deprecated?
 main = withSocketsDo $ do
     sock <- socket AF_INET Stream 0
     setSocketOption sock ReuseAddr 1
@@ -36,7 +35,7 @@ loop sock = do
   --forkIO (runConn conn)  --segmentation fault
   loop sock
 
---deal with EOF
+
 runConn :: (Socket, SockAddr) -> IO ()
 runConn (sock,_) = do
   handle <- socketToHandle sock ReadWriteMode
