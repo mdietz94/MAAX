@@ -22,18 +22,23 @@ import System.IO.Error
 
 ip = "127.0.0.1"
 
+--if debug then will not run mario, just sets fitness to 42 and sends back
+debug = True
 
-main = withSocketsDo $ loop 10 2
+main = withSocketsDo $ loop 10 10 1
 
 
 -- n is number of times to try to connect after ConnectionRefused
 -- t is how long to wait before retrying in seconds
-loop 0 _ = void $ print "Master not responding . . . stopping"
-loop n t = catch loopListen handler
+loop _ 0 _ = void $ print "Master not responding . . . stopping"
+loop nmax n t = catch loopListen handler
   where
     handler e 
-      | isDoesNotExistError e = threadDelay (10^6 * t) >> loop (n - 1) (t*2)
-      | otherwise = loop n t
+      | isDoesNotExistError e = print e >>
+                                putStrLn ("trying again in " ++ show t) >>
+                                threadDelay (10^6 * t) >>
+                                loop nmax (n - 1) (t*2)
+      | otherwise = print e >> loop nmax nmax 1
 
 
 loopListen = do
@@ -52,7 +57,8 @@ runConn handle = do
    $ do str <- B.hGet handle nbytes
         putStrLn $ "received " ++ show nbytes
         g0 <- strictDecode <$> return str :: IO Genome
-        g1 <- strictEncode <$> M.runMario g0
+        g1 <- strictEncode <$> if debug then return $ set fitness 42 g0
+                                        else M.runMario g0
         let g1bytes = strictEncode $ B.length g1
         hPutStrLn handle g1bytes
         B.hPut handle g1
