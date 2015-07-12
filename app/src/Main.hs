@@ -1,3 +1,0 @@
-import Mario
-
-main = marioMain
