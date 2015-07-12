@@ -1,7 +1,3 @@
-import Emulator
-import NeuralNetwork
-import qualified Data.ByteString as B (writeFile)
+import Mario
 
-main = do
-    saveData <- runProgram "superMario.nes" (const defaultJoystick) 10
-    B.writeFile "super.sav" saveData
+main = marioMain

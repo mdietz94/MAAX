@@ -22,9 +22,9 @@
 // extern uint8 *XBuf, *XBackBuf;
 
 uint8* GetMemory() {
-  uint8* mem = (uint8*)malloc(0x800);
-  memcpy(mem, RAM, 0x800);
-  return mem;
+  //uint8* mem = (uint8*)malloc(0x800);
+  //memcpy(mem, RAM, 0x800);
+  return RAM;
 }
 
 static inline uint64 MD5ToChecksum(const uint8 digest[16]) {
@@ -58,7 +58,7 @@ uint64 ImageChecksum() {
 /**
  * Initialize all of the subsystem drivers: video, audio, and joystick.
  */
-int DriverInitialize(FCEUGI *gi, uint8 *joydata) {
+int DriverInitialize(FCEUGI *gi) {
   // Used to init video. I think it's safe to skip.
 
   // Here we initialized sound. Assuming it's safe to skip,
@@ -72,8 +72,8 @@ int DriverInitialize(FCEUGI *gi, uint8 *joydata) {
   fceulib__sound.FCEUI_InitSound();
 
   // Why do both point to the same joydata? -tom
-  fceulib__input.FCEUI_SetInput(0, SI_GAMEPAD, joydata, 0);
-  fceulib__input.FCEUI_SetInput(1, SI_GAMEPAD, joydata, 0);
+  fceulib__input.FCEUI_SetInput(0, SI_GAMEPAD, &joydata, 0);
+  fceulib__input.FCEUI_SetInput(1, SI_GAMEPAD, &joydata, 0);
 
   fceulib__input.FCEUI_SetInputFourscore(false);
   return 1;
@@ -85,7 +85,7 @@ int DriverInitialize(FCEUGI *gi, uint8 *joydata) {
  * provides data necessary for the driver code (number of scanlines to
  * render, what virtual input devices to use, etc.).
  */
-int LoadGame(const string &path, uint8* joydata) {
+int LoadGame(const string &path) {
   FCEU_CloseGame();
   GameInfo = nullptr;
 
@@ -97,7 +97,7 @@ int LoadGame(const string &path, uint8* joydata) {
   // to override our input config, or something like that. No
   // weird stuff. Skip it.
 
-  if (!DriverInitialize(GameInfo, joydata)) {
+  if (!DriverInitialize(GameInfo)) {
     return 0;
   }
 	
@@ -116,7 +116,7 @@ void Destroy() {
   FCEUI_Kill();
 }
 
-void Create(char* romfileC, uint8* joydata) {
+void Create(char* romfileC) {
   // initialize the infrastructure
   string romfile (romfileC);
   int error = FCEUI_Initialize();
@@ -137,7 +137,7 @@ void Create(char* romfileC, uint8* joydata) {
   fceulib__ppu.FCEUI_DisableSpriteLimitation(1);
 
   // Load the game.
-  if (1 != LoadGame(romfile.c_str(), joydata)) {
+  if (1 != LoadGame(romfile.c_str())) {
     fprintf(stderr, "Couldn't load [%s]\n", romfile.c_str());
   }
 }
@@ -145,9 +145,10 @@ void Create(char* romfileC, uint8* joydata) {
 // Make one emulator step with the given input.
 // Bits from MSB to LSB are
 //    RLDUTSBA (Right, Left, Down, Up, sTart, Select, B, A)
-void Step() {
+void Step(uint8 data) {
   // Limited ability to skip video and sound.
   static constexpr int SKIP_VIDEO_AND_SOUND = 2;
+  joydata = (uint32)data;
 
   // Emulate a single frame.
   int32 *sound;
@@ -155,11 +156,12 @@ void Step() {
   FCEUI_Emulate(nullptr, &sound, &ssize, SKIP_VIDEO_AND_SOUND);
 }
 
-void StepFull() {
+void StepFull(uint8 data) {
 
   // Run the video and sound as well.
   static constexpr int DO_VIDEO_AND_SOUND = 0;
 
+  joydata = (uint32)data;
   // Emulate a single frame.
   // TODO: Remove these arguments, which we don't use.
   int32 *sound;
