@@ -77,6 +77,8 @@ readNextN _ 0 = return []
 readNextN ch n = readChan ch >>= \x -> (x:) <$> readNextN ch (n - 1)
 
 
+testMain = run $ replicate 10 testGenome
+
 testGenome :: Genome
 testGenome = Genome 0 (om + 1) gs1 where
   im = 169 - 1
