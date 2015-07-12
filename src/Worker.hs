@@ -32,7 +32,7 @@ loop 0 _ = void $ print "Master not responding . . . stopping"
 loop n t = catch loopListen handler
   where
     handler e 
-      | isDoesNotExistError e = threadDelay (10^6 * t) >> loop (n - 1) (t^2)
+      | isDoesNotExistError e = threadDelay (10^6 * t) >> loop (n - 1) (t*2)
       | otherwise = loop n t
 
 
