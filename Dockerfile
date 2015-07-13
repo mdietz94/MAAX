@@ -24,10 +24,12 @@ ENV PATH /root/.cabal/bin:/opt/cabal/1.22/bin:$PATH
 
 WORKDIR /app
 
-RUN cabal update && cabal install
 
 # SETUP EMULATOR
 RUN cd tom7/fceulib \
   && make all \
   && cp libemulator.so /app/tom7/libemulator.so \
   && cp libemulator.so /app/dist/build/MAAX/libemulator.so
+
+
+RUN cabal update && cabal install
