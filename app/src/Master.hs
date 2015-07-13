@@ -1,24 +1,20 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Types
+import Mario
+import NeuralNetwork hiding (run)
+import Emulator (saveAsFM2)
 
 import Control.Concurrent
-import Control.Concurrent.Chan
-import Control.Concurrent.Async
 import Control.Exception
-import Control.Lens
 import Control.Monad
 import Data.Binary
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as B
 import Data.ByteString.Char8 (hPutStrLn)
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
-import Network.Socket.ByteString
 import System.IO hiding (hPutStrLn)
 import System.Directory
-import Mario
-import NeuralNetwork hiding (run)
-import Emulator (saveAsFM2)
 import System.Random
 
 --to test this load into cabal repl and run "testMain" and start
@@ -30,16 +26,18 @@ replaceGenomes pop xs = do
   (a,b,c,d,gs) <- pop
   (a,b,c,d,take (length gs) xs) : replaceGenomes pop (drop (length gs) xs)
 
+runPopulation :: (Int, Population, [Float]) -> Int -> Socket -> IO b
 runPopulation (gInnov,p0,gen) n sock = do
   let genomes = concatMap (\(_,_,_,_,gs) -> gs) p0
   genomes' <- run genomes sock
   let p1 = replaceGenomes p0 genomes'
   let (gInnov',p2,gen') = stepNetwork p0 (gInnov,p1,gen) marioConfig
-  savePopulation ("./data/" ++ (show (n+1)) ++ ".bin") p2
+  savePopulation ("./data/" ++ show (n+1) ++ ".bin") p2
   joydata <- recordMario (fittestGenome p2)
-  saveAsFM2 ("./data/" ++ (show (n+1)) ++ ".fm2") joydata
+  saveAsFM2 ("./data/" ++ show (n+1) ++ ".fm2") joydata
   runPopulation (gInnov',p2,gen') (n+1) sock
 
+loadMaxPopulation :: IO (Int, Population)
 loadMaxPopulation = loadMaxPop 1
   where
     loadMaxPop n = do
@@ -50,6 +48,7 @@ loadMaxPopulation = loadMaxPop 1
            p0 <- loadPopulation $ "./data/" ++ show (n-1) ++ ".bin"
            return (n-1,p0)
 
+main :: IO ()
 main = withSocketsDo $ do
   (num,p0) <- loadMaxPopulation
   let genomes = concatMap (\(_,_,_,_,gs) -> gs) p0
@@ -79,30 +78,30 @@ run genomes sock = do
 - done is a channel containing all the genomes completed
 -}
 sender :: Int -> MVar Int -> Chan Genome -> Chan Genome -> Socket -> IO ()
-sender ntodo ndone todo done sock = withSocketsDo $ loop sock
+sender ntodo ndone todo done sock0 = withSocketsDo $ loop sock0
   where
     loop :: Socket -> IO ()
     loop sock = do
       (sck,_) <- accept sock
       putStrLn "Connection accepted!"
-      handle <- socketToHandle sck ReadWriteMode
-      forkIO $ runLoop handle
+      sHandle <- socketToHandle sck ReadWriteMode
+      _ <- forkIO $ runLoop sHandle
       --this is needed so sender terminates, when sender is modified
       --so it never closes the socket this will not be needed
       isDone <- (== ntodo) <$> readMVar ndone
       unless isDone (loop sock)
     runLoop :: Handle -> IO ()
-    runLoop handle = do
+    runLoop sHandle = do
       isDone <- (== ntodo) <$> readMVar ndone
       unless isDone $ do
         g <- readChan todo
-        result <- try $ sendGenome handle g
+        result <- try $ sendGenome sHandle g
         case result :: Either SomeException Genome of
           Right g' -> writeChan done g' >>
                       incMVar ndone >>
-                      runLoop handle
-          Left e -> writeChan todo g >>
-                    runLoop handle
+                      runLoop sHandle
+          Left _ -> writeChan todo g >>
+                    runLoop sHandle
 
 
 incMVar :: MVar Int -> IO ()
@@ -111,15 +110,15 @@ incMVar mv = do
   putMVar mv (i + 1)
 
 sendGenome :: Handle -> Genome -> IO Genome
-sendGenome handle g = do
+sendGenome sHandle g = do
   let str = strictEncode g
       gbytes = strictEncode $ B.length str
-  hPutStrLn handle gbytes
-  B.hPut handle str
+  hPutStrLn sHandle gbytes
+  B.hPut sHandle str
   putStrLn $ "sent " ++ show (B.length str)
-  rb <- B.hGetLine handle
+  rb <- B.hGetLine sHandle
   let rbytes = strictDecode rb
-  resp <- B.hGet handle rbytes
+  resp <- B.hGet sHandle rbytes
   putStrLn $ "received " ++ show rbytes
   return $ strictDecode resp
 
@@ -133,13 +132,3 @@ strictDecode = decode . BL.fromStrict
 readNextN :: Chan a -> Int -> IO [a]
 readNextN _ 0 = return []
 readNextN ch n = readChan ch >>= \x -> (x:) <$> readNextN ch (n - 1)
-
-
-testMain = run $ replicate 10 testGenome
-
-testGenome :: Genome
-testGenome = Genome 0 (om + 1) gs1 where
-  im = 169 - 1
-  om = 169 + 6
-  gs0 = [Gene i o 1 True 0 | i <- [0 .. im], o <- [im + 1 .. om]]
-  gs1 = zipWith (set innovation) [0..] gs0

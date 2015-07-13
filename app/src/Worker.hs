@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 import Types
 import qualified Mario as M
 
@@ -21,16 +19,16 @@ debug :: Bool
 debug = False
 
 main :: IO ()
-main = execParser opts >>= startMaster
+main = execParser opts >>= startWorker
   where
-    opts = info (helper <*> optParser)
+    opts = info (helper <*> optsParser)
                 (fullDesc <> 
                  progDesc "Evaluates fitness of Neural Networks in Mario" <> 
                  header "MAAX-worker" )
 
 
-startMaster :: Opts -> IO ()
-startMaster opts = withSocketsDo $ loop opts 10 10 1
+startWorker :: Opts -> IO ()
+startWorker opts = withSocketsDo $ loop opts 10 10 1
 
 
 -- t is how long to wait before retrying in seconds
@@ -81,12 +79,15 @@ data Opts = Opts String String
 instance Show Opts where
   show (Opts ip port) = ip ++ ':' : port
 
-optParser :: Parser Opts
-optParser= Opts <$> strOption (short 'm' <>
-                               long "master" <>
-                               metavar "MASTER_IP" <>
-                               help "IP address of server running master")
-                <*> strOption (short 'p' <>
-                               long "port" <>
-                               metavar "MASTER_PORT" <>
-                               help "Port master is listening on")
+optsParser :: Parser Opts
+optsParser = 
+    Opts <$> strOption (short 'm' <>
+                       long "master" <>
+                       metavar "MASTER_IP" <>
+                       value "joomah.com" <>
+                       help "IP of master, default joomah.com")
+        <*> strOption (short 'p' <>
+                       long "port" <>
+                       metavar "MASTER_PORT" <>
+                       value "3000" <>
+                       help "Port master is listening on, default 3000")
