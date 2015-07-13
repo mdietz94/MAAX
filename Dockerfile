@@ -4,6 +4,8 @@ MAINTAINER Arthur Burkart <artburkart@gmail.com>
 ENV DEBIAN_FRONTEND noninteractive
 ENV LANG            C.UTF-8
 
+RUN rm /bin/sh && ln -s /bin/bash /bin/sh
+
 COPY ./app /app
 
 # INSTALL DEPENDENCIES
@@ -32,4 +34,7 @@ RUN cd tom7/fceulib \
 
 RUN tom7/./add_emulator_to_LD_LIBRARY_PATH.sh && source ~/.bashrc
 
-RUN cabal update && cabal install
+RUN cabal update 
+RUN cabal sandbox init 
+RUN cabal install --only-dependencies 
+RUN cabal build
