@@ -28,7 +28,7 @@ WORKDIR /app
 # SETUP EMULATOR
 RUN cd tom7/fceulib \
   && make all \
-  && cp libemulator.so /app/tom7/libemulator.so \
+  && cp libemulator.so /app/tom7/libemulator.so
 
 RUN tom7/./add_emulator_to_LD_LIBRARY_PATH.sh && source ~/.bashrc
 
