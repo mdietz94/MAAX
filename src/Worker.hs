@@ -20,7 +20,7 @@ import Control.Concurrent
 import System.IO hiding (hPutStrLn)
 import System.IO.Error
 
-ip = "127.0.0.1"
+ip = "joomah.com"
 
 --if debug then will not run mario, just sets fitness to 42 and sends back
 debug = False
