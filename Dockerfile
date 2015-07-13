@@ -29,9 +29,7 @@ WORKDIR /app
 RUN cd tom7/fceulib \
   && make all \
   && cp libemulator.so /app/tom7/libemulator.so \
-  && cp libemulator.so /app/dist/build/MAAX/libemulator.so
-
-
-RUN cabal update && cabal install
 
 RUN tom7/./add_emulator_to_LD_LIBRARY_PATH.sh && source ~/.bashrc
+
+RUN cabal update && cabal install
