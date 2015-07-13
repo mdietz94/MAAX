@@ -33,3 +33,5 @@ RUN cd tom7/fceulib \
 
 
 RUN cabal update && cabal install
+
+RUN tom7/./add_emulator_to_LD_LIBRARY_PATH.sh && source ~/.bashrc
