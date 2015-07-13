@@ -10,7 +10,7 @@ COPY ./app /app
 RUN echo 'deb http://ppa.launchpad.net/hvr/ghc/ubuntu trusty main' > /etc/apt/sources.list.d/ghc.list \
   && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F6F88286\
   && apt-get update \
-  && apt-get install -y curl vim make libc6 libgmp10 libgmp-dev libdevil-dev zlib1g-dev g++ xz-utils cabal-install-1.22 \
+  && apt-get install -y curl vim make libc6 libgmp10 libgmp-dev zlib1g-dev g++ xz-utils cabal-install-1.22 \
   && rm -rf /var/curllib/apt/lists/*
 
 # INSTALL HASKELL
