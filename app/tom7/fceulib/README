@@ -1,0 +1,18 @@
+
+This is Tom 7's attempt to make FCE Ultra into a thread-safe library.
+As of 14 Jun 2015, what's here is the modernization I did for the
+Learnfun & Playfun project (../tasbot/) and major culling of
+unnecessary parts of FCEU. I've also transformed many of the modules
+into objects so that they don't read and write global variables, but
+there's some more of that to do. After that's done, it should be a
+single heroic pass to make the emulator instantiatable multiple times
+in the same process.
+
+The new interface is in emulator.h and emulator_test contains a small
+test suite to make sure I don't mess anything up as I transform the
+code.
+
+All of the code in this directory is licensed under the terms of the
+GNU General Public License, which is contained in the file COPYING.
+The list of authors and copyright holders is in Authors.md.
+

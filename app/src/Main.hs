@@ -1,0 +1,3 @@
+import Mario
+
+main = marioMain
