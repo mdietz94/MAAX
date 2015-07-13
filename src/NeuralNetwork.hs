@@ -172,16 +172,16 @@ findSpecies wghtVsTop specThresh g = findIndex (\(_,_,_,repG,_) -> geneticDiffer
 --assumes genomes are sorted in ascending order by fitness
 cull :: Int -> Int -> Population -> Population
 cull maxSize maxStag = cullEmpty .
-                       cullWeakSpecies .
                        map (cullSpecies maxSize) .
+                       cullWeakSpecies .
                        filter (\(i,_,_,_,_) -> i < maxStag)
 
 cullWeakSpecies :: Population -> Population
 cullWeakSpecies pop = p' where
-  p_size = fromIntegral $ popSize pop
+  p_size = fromIntegral $ length pop
   avg_fs = map speciesAvgFitness pop
   p_avg_f = sum avg_fs
-  p' = map snd $ filter (\(avg,s) -> avg / p_avg_f * p_size >= 0.9) (zip avg_fs pop)
+  p' = map snd $ filter (\(avg,s) -> avg / p_avg_f * p_size >= 0.8) (zip avg_fs pop)
 
 --removes species which no longer have any members
 cullEmpty :: [Species] -> [Species]
