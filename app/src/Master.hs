@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Master where
+
 import Types
 
 import Control.Concurrent
