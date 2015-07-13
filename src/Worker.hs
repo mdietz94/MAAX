@@ -23,7 +23,7 @@ import System.IO.Error
 ip = "127.0.0.1"
 
 --if debug then will not run mario, just sets fitness to 42 and sends back
-debug = True
+debug = False
 
 main = withSocketsDo $ loop 10 10 1
 
@@ -33,7 +33,7 @@ main = withSocketsDo $ loop 10 10 1
 loop _ 0 _ = void $ print "Master not responding . . . stopping"
 loop nmax n t = catch loopListen handler
   where
-    handler e 
+    handler e
       | isDoesNotExistError e = print e >>
                                 putStrLn ("trying again in " ++ show t) >>
                                 threadDelay (10^6 * t) >>

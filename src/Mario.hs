@@ -1,4 +1,4 @@
-module Mario where  
+module Mario where
 
 import Emulator
 import Types
@@ -67,6 +67,14 @@ stepMarioNetwork (gInnov,p0,gen) = do
   let p4 = cull (marioConfig^.speciesMaxSize) (marioConfig^.stagnationMax) p3
   putStrLn . ("Top Fitness: " ++) . show . (^.fitness) . fittestGenome $ p4
   return ( reproduce gen marioConfig gInnov p4 )
+
+
+stepNetwork p0 (gInnov,p1,gen) config = reproduce gen config gInnov p4
+  where
+    stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
+    p2 = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1
+    p3 = map sortSpecies p2
+    p4 = cull (config^.speciesMaxSize) (config^.stagnationMax) p3
 
 runMarioNetwork 0 (_,p0,_) = return p0
 runMarioNetwork n st@(_,p0,_) = (runMarioNetwork (n-1) =<< stepMarioNetwork st) `catch` handleUserInterrupt
