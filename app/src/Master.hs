@@ -16,7 +16,12 @@ import Data.ByteString.Char8 (hPutStrLn)
 import Network.Socket hiding (send, sendTo, recv, recvFrom)
 import System.IO hiding (hPutStrLn)
 import System.Directory
+import System.Log.Logger
+import System.Log.Formatter
+import System.Log.Handler (setFormatter)
+import System.Log.Handler.Simple
 import System.Random
+
 
 --to test this load into cabal repl and run "testMain" and start
 --the worker in another terminal cabal repl with "main"
@@ -50,6 +55,9 @@ loadMaxPopulation = loadMaxPop 1
 
 main :: IO ()
 main = withSocketsDo $ do
+  logH <- fileHandler "Master.log" INFO >>= \lh -> return $
+          setFormatter lh (simpleLogFormatter "[$time : $prio] $msg")
+  updateGlobalLogger rootLoggerName (addHandler logH)
   (num,p0) <- loadMaxPopulation
   let genomes = concatMap (\(_,_,_,_,gs) -> gs) p0
   let gInnov = maximum . map _innovation . concatMap _genes $ genomes
@@ -58,7 +66,7 @@ main = withSocketsDo $ do
   setSocketOption sock ReuseAddr 1
   bindSocket sock (SockAddrInet 3000 iNADDR_ANY)
   listen sock 5
-  putStrLn "Listening on port 3000"
+  infoM rootLoggerName "Listening on port 3000"
   runPopulation (gInnov,p0,gen) num sock
 
 run :: [Genome] -> Socket -> IO [Genome]
@@ -83,7 +91,7 @@ sender ntodo ndone todo done sock0 = withSocketsDo $ loop sock0
     loop :: Socket -> IO ()
     loop sock = do
       (sck,_) <- accept sock
-      putStrLn "Connection accepted!"
+      infoM rootLoggerName "Connection accepted!"
       sHandle <- socketToHandle sck ReadWriteMode
       _ <- forkIO $ runLoop sHandle
       --this is needed so sender terminates, when sender is modified

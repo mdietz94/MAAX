@@ -20,3 +20,4 @@ app/tom7/*.so
 *.swp
 *.swo
 *~
+*.log
