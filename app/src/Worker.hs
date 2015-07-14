@@ -20,7 +20,7 @@ import System.Log.Handler.Simple
 
 --if debug then will not run mario, just sets fitness to 42 and sends back
 debug :: Bool
-debug = False
+debug = True
 
 main :: IO ()
 main = execParser opts >>= startWorker
@@ -33,11 +33,11 @@ main = execParser opts >>= startWorker
 
 startWorker :: Opts -> IO ()
 startWorker opts = withSocketsDo $ do
-  logH <- fileHandler "Worker.log" INFO >>= \lh -> return $
+  logH <- fileHandler (_logF opts) INFO >>= \lh -> return $
           setFormatter lh (simpleLogFormatter "[$time : $prio] $msg")
   updateGlobalLogger rootLoggerName (setLevel INFO . addHandler logH)
   infoM rootLoggerName "Worker starting up"
-  loop opts 2 2 1
+  loop opts 5 5 1
 
 
 -- t is how long to wait before retrying in seconds
@@ -53,7 +53,7 @@ loop opts nmax n t = catch (loopListen opts) handler
                     loop opts nmax nmax 1
 
 loopListen :: Opts -> IO ()
-loopListen (Opts ip port) = do
+loopListen (Opts ip port _) = do
     infos <- getAddrInfo Nothing (Just ip) (Just port)
     sock <- socket AF_INET Stream 0
     connect sock (addrAddress . head $ infos)
@@ -83,10 +83,12 @@ strictEncode = BL.toStrict . encode
 strictDecode :: Binary a => B.ByteString -> a
 strictDecode = decode . BL.fromStrict
 
-data Opts = Opts String String
+data Opts = Opts { _ip :: String
+                 , _port :: String 
+                 , _logF :: String }
 
 instance Show Opts where
-  show (Opts ip port) = ip ++ ':' : port
+  show (Opts ip port _) = ip ++ ':' : port
 
 optsParser :: Parser Opts
 optsParser = 
@@ -95,8 +97,13 @@ optsParser =
                        metavar "MASTER_IP" <>
                        value "joomah.com" <>
                        help "IP of master, default joomah.com")
-        <*> strOption (short 'p' <>
+         <*> strOption (short 'p' <>
                        long "port" <>
                        metavar "MASTER_PORT" <>
                        value "3000" <>
                        help "Port master is listening on, default 3000")
+         <*> strOption (short 'l' <>
+                       long "log" <>
+                       metavar "FILE" <>
+                       value "worker.log" <>
+                       help "File to log messages to, default worker.log")
