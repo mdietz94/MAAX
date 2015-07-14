@@ -20,7 +20,7 @@ import System.Log.Handler.Simple
 
 --if debug then will not run mario, just sets fitness to 42 and sends back
 debug :: Bool
-debug = True
+debug = False
 
 main :: IO ()
 main = execParser opts >>= startWorker
@@ -37,7 +37,7 @@ startWorker opts = withSocketsDo $ do
           setFormatter lh (simpleLogFormatter "[$time : $prio] $msg")
   updateGlobalLogger rootLoggerName (setLevel INFO . addHandler logH)
   infoM rootLoggerName "Worker starting up"
-  loop opts 5 5 1
+  loop opts 10 10 1
 
 
 -- t is how long to wait before retrying in seconds
