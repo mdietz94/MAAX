@@ -28,7 +28,7 @@ import System.Random
 
 replaceGenomes :: Population -> [Genome] -> Population
 replaceGenomes [] _   = []
-replaceGenomes pop [] = pop
+replaceGenomes _ [] = []
 replaceGenomes ((a,b,c,d,gs):pop) xs = (a,b,c,d, take (length gs) xs) : replaceGenomes pop (drop (length gs) xs)
 
 runPopulation :: (Int, Population, [Float]) -> Int -> Socket -> IO b

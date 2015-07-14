@@ -53,7 +53,6 @@ runMario genome = do
 runMarioSpecies :: Species -> IO Species
 runMarioSpecies (s,m,fit,rep,gen) = do
   gen' <- sequence . map runMario $ gen
-  let n = fromIntegral $ length gen'
   let sum_f = foldl (\a g -> a + g^.fitness) 0.0 gen'
   let max_g = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gen'
   return (s,max_g^.fitness,sum_f,max_g,gen')
@@ -69,12 +68,18 @@ stepMarioNetwork (gInnov,p0,gen) = do
   return ( reproduce gen marioConfig gInnov p4 )
 
 
-stepNetwork p0 (gInnov,p1,gen) config = reproduce gen config gInnov p4
+stepNetwork p0 (gInnov,p1,gen) config = reproduce gen config gInnov p5
   where
+    p2 = map calculateSpecies p1
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
-    p2 = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1
-    p3 = map sortSpecies p2
-    p4 = cull (config^.speciesMaxSize) (config^.stagnationMax) p3
+    p3 = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1
+    p4 = map sortSpecies p2
+    p5 = cull (config^.speciesMaxSize) (config^.stagnationMax) p3
+    calculateSpecies (s,m,fit,rep,gen) = (s,max_g^.fitness,sum_f,max_g,gen)
+      where
+        sum_f = foldl (\a g -> a + g^.fitness) 0.0 gen
+        max_g = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gen
+
 
 runMarioNetwork 0 (_,p0,_) = return p0
 runMarioNetwork n st@(_,p0,_) = (runMarioNetwork (n-1) =<< stepMarioNetwork st) `catch` handleUserInterrupt
