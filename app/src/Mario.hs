@@ -72,9 +72,9 @@ stepNetwork p0 (gInnov,p1,gen) config = reproduce gen config gInnov p5
   where
     p2 = map calculateSpecies p1
     stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
-    p3 = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1
-    p4 = map sortSpecies p2
-    p5 = cull (config^.speciesMaxSize) (config^.stagnationMax) p3
+    p3 = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p2
+    p4 = map sortSpecies p3
+    p5 = cull (config^.speciesMaxSize) (config^.stagnationMax) p4
     calculateSpecies (s,m,fit,rep,gen) = (s,max_g^.fitness,sum_f,max_g,gen)
       where
         sum_f = foldl (\a g -> a + g^.fitness) 0.0 gen
