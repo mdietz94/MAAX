@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+module Master where
 
 import Types
 import Mario
@@ -21,10 +22,9 @@ import System.Random
 --the worker in another terminal cabal repl with "main"
 
 replaceGenomes :: Population -> [Genome] -> Population
+repalceGenomes [] _   = []
 replaceGenomes pop [] = pop
-replaceGenomes pop xs = do
-  (a,b,c,d,gs) <- pop
-  (a,b,c,d,take (length gs) xs) : replaceGenomes pop (drop (length gs) xs)
+replaceGenomes ((a,b,c,d,gs):pop) xs = (a,b,c,d, take (length gs) xs) : replaceGenomes pop (drop (length gs) xs)
 
 runPopulation :: (Int, Population, [Float]) -> Int -> Socket -> IO b
 runPopulation (gInnov,p0,gen) n sock = do
