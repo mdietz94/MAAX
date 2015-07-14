@@ -78,7 +78,7 @@ stepNetwork p0 (gInnov,p1,gen) config = reproduce gen config gInnov p5
     calculateSpecies (s,m,fit,rep,gen) = (s,max_g^.fitness,sum_f,max_g,gen)
       where
         sum_f = foldl (\a g -> a + g^.fitness) 0.0 gen
-        max_g = maximumBy (\a b 0> compare (a^.fitness) (b^.fitness)) gen
+        max_g = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gen
 
 
 runMarioNetwork 0 (_,p0,_) = return p0
