@@ -22,7 +22,7 @@ import System.Random
 --the worker in another terminal cabal repl with "main"
 
 replaceGenomes :: Population -> [Genome] -> Population
-repalceGenomes [] _   = []
+replaceGenomes [] _   = []
 replaceGenomes pop [] = pop
 replaceGenomes ((a,b,c,d,gs):pop) xs = (a,b,c,d, take (length gs) xs) : replaceGenomes pop (drop (length gs) xs)
 
