@@ -22,8 +22,8 @@ import System.Random
 --the worker in another terminal cabal repl with "main"
 
 replaceGenomes :: Population -> [Genome] -> Population
-repalceGenomes [] _   = []
-replaceGenomes pop [] = pop
+replaceGenomes [] _   = []
+replaceGenomes _ [] = []
 replaceGenomes ((a,b,c,d,gs):pop) xs = (a,b,c,d, take (length gs) xs) : replaceGenomes pop (drop (length gs) xs)
 
 runPopulation :: (Int, Population, [Float]) -> Int -> Socket -> IO b
