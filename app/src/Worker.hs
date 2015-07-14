@@ -13,6 +13,10 @@ import Control.Concurrent
 import Options.Applicative
 import System.IO hiding (hPutStrLn)
 import System.IO.Error
+import System.Log.Logger
+import System.Log.Formatter
+import System.Log.Handler (setFormatter)
+import System.Log.Handler.Simple
 
 --if debug then will not run mario, just sets fitness to 42 and sends back
 debug :: Bool
@@ -28,20 +32,25 @@ main = execParser opts >>= startWorker
 
 
 startWorker :: Opts -> IO ()
-startWorker opts = withSocketsDo $ loop opts 10 10 1
+startWorker opts = withSocketsDo $ do
+  logH <- fileHandler "Worker.log" INFO >>= \lh -> return $
+          setFormatter lh (simpleLogFormatter "[$time : $prio] $msg")
+  updateGlobalLogger rootLoggerName (setLevel INFO . addHandler logH)
+  infoM rootLoggerName "Worker starting up"
+  loop opts 2 2 1
 
 
 -- t is how long to wait before retrying in seconds
 loop :: Opts -> Int -> Int -> Int -> IO ()
-loop opts _ 0 _ = void $ putStrLn $ show opts ++  " not responding . . . stopping"
+loop opts _ 0 _ = errorM rootLoggerName $ show opts ++ " not responding . . . stopping"
 loop opts nmax n t = catch (loopListen opts) handler
   where
     handler e
-      | isDoesNotExistError e = print e >>
-                                putStrLn ("trying again in " ++ show t) >>
+      | isDoesNotExistError e = warningM rootLoggerName (show e ++ " trying again in " ++ show t) >>
                                 threadDelay (10 ^ (6 :: Int) * t) >>
                                 loop opts nmax (n - 1) (t*2)
-      | otherwise = print e >> loop opts nmax nmax 1
+      | otherwise = noticeM rootLoggerName (show e) >> 
+                    loop opts nmax nmax 1
 
 loopListen :: Opts -> IO ()
 loopListen (Opts ip port) = do
@@ -50,7 +59,7 @@ loopListen (Opts ip port) = do
     connect sock (addrAddress . head $ infos)
     sHandle <- socketToHandle sock ReadWriteMode
     hSetBuffering sHandle NoBuffering
-    runConn sHandle
+    runConn sHandle 
     hClose sHandle
 
 runConn :: Handle -> IO ()
@@ -58,15 +67,15 @@ runConn sHandle = do
   nbytes <- strictDecode <$> B.hGetLine sHandle
   unless (nbytes < 1)
    $ do g0bs <- B.hGet sHandle nbytes
-        putStrLn $ "received " ++ show nbytes
+        infoM rootLoggerName $ "received " ++ show nbytes ++ " bytes"
         g0 <- strictDecode <$> return g0bs :: IO Genome
         g1 <- strictEncode <$> if debug then return $ set fitness 42 g0
                                         else M.runMario g0
         let g1bytes = strictEncode $ B.length g1
         hPutStrLn sHandle g1bytes
         B.hPut sHandle g1
-        putStrLn $ "sent " ++ show (B.length g1)
-        runConn sHandle
+        infoM rootLoggerName $ "sent " ++ show (B.length g1) ++ " bytes"
+        runConn sHandle 
 
 strictEncode :: Binary a => a -> B.ByteString
 strictEncode = BL.toStrict . encode
