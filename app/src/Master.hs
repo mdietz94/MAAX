@@ -1,6 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Master where
-
 import Types
 import Mario
 import NeuralNetwork hiding (run)
@@ -45,6 +43,7 @@ runPopulation (gInnov,p0,gen) n sock = do
   let genomes = concatMap (\(_,_,_,_,gs) -> gs) p0
   genomes' <- run genomes sock
   let p1 = replaceGenomes p0 genomes'
+  savePopulation ("./data/" ++ show n ++ ".bin") p1
   let (gInnov',p2,gen') = stepNetwork p0 (gInnov,p1,gen) marioConfig
   savePopulation ("./data/" ++ show (n+1) ++ ".bin") p2
   joydata <- recordMario (fittestGenome p2)
