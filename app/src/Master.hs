@@ -25,9 +25,18 @@ import System.Random
 --the worker in another terminal cabal repl with "main"
 
 replaceGenomes :: Population -> [Genome] -> Population
-replaceGenomes [] _   = []
-replaceGenomes _ [] = []
-replaceGenomes ((a,b,c,d,gs):pop) xs = (a,b,c,d, take (length gs) xs) : replaceGenomes pop (drop (length gs) xs)
+replaceGenomes pop gns = map (\(a,b,c,d,gs) -> (a,b,c,d,replace gs gns)) pop
+  where
+    replace :: [Genome] -> [Genome] -> [Genome]
+    replace [] _ = []
+    replace g [] = g
+    replace (x:xs) gs = fndMatch x gs : replace xs gs
+    fndMatch :: Genome -> [Genome] -> Genome
+    fndMatch x [] = x
+    fndMatch x (g:gs)
+      | x `eq` g = g
+      | otherwise = fndMatch x gs
+    eq (Genome _ x y) (Genome _ x1 y1) = x == x1 && y == y1
 
 runPopulation :: (Int, Population, [Float]) -> Int -> Socket -> IO b
 runPopulation (gInnov,p0,gen) n sock = do
