@@ -44,7 +44,7 @@ startWorker opts = withSocketsDo $ do
 loop :: Opts -> Int -> Int -> Int -> IO ()
 loop opts nmax 0 t = warningM rootLoggerName (show opts ++ " not responding . . . sleeping") >>
                      threadDelay (10 ^ (6 :: Int) * 2 ^ (9 :: Int)) >>
-                     loop opts nmax nmax 1
+                     loop opts nmax 0 1
 loop opts nmax n t = catch (loopListen opts) handler
   where
     handler e
