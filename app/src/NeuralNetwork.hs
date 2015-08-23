@@ -2,7 +2,6 @@
 module NeuralNetwork where
 
 import Types
-import Emulator
 import Data.List
 import Data.Maybe
 import Control.Lens
@@ -20,6 +19,7 @@ sigmoidXor x = exp x / (1 + exp x)
 sigmoidXor2 :: Float -> Float
 sigmoidXor2 x = 1 / (1 + exp (negate x))
 
+xorConfig :: Config
 xorConfig = Config { _numInputs = 2
                    , _numOutputs = 1
                    , _populationSize = 150
@@ -34,6 +34,7 @@ xorConfig = Config { _numInputs = 2
                    , _sigmoidFunction = sigmoid
                    }
 
+marioConfig :: Config
 marioConfig = Config { _numInputs = 169
                      , _numOutputs = 6
                      , _populationSize = 200
@@ -58,7 +59,7 @@ marioConfig = Config { _numInputs = 169
 -- 3% chance of adding new node
 -- 5% chance of adding new link
 
-
+getInnovation :: HasGenome s => s -> Int -> Gene
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
 
 type Population = [Species]
@@ -317,7 +318,7 @@ mutate config gInnov genome rs = mutateH gInnov (perturbWeights genome rs) (drop
     perturb :: Float -> Gene -> Gene
     perturb r = if smallChange then weight +~ r * 0.4 - 0.2 else weight .~ r * 4.0 - 2.0
       where
-        smallChange = floor (r * 100.0) > 4
+        smallChange = floor (r * 100.0) > (4 :: Int)
 
 
 -- genome1 MUST be fitter than genome2!
@@ -380,7 +381,7 @@ outputs = map (foldl1' xor) inputs
 -}
 fitnessXor :: Config -> Genome -> Float
 fitnessXor config g = let genome_outs = concatMap (flip (evaluateGenome config) g) inputs
-                      in (4 - sum (map abs (zipWith (-) outputs genome_outs))) ^ 2
+                      in (4 - sum (map abs (zipWith (-) outputs genome_outs))) ^ (2 :: Int)
 
 speciesInfo :: Species -> String
 speciesInfo (a,b,c,d,e) = "stag[" ++ show a ++ "]\tmax fit[" ++ fmtFloatN b 4 ++

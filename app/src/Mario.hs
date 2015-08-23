@@ -37,7 +37,7 @@ writePPM name w h pixels = writeFile name txt where
   toTxt = (++ " ") . show . (fromIntegral :: Word8 -> Int)
   f :: [Color] -> String
   f [] = ""
-  f (Color r g b a:ps) = toTxt r ++ toTxt g ++ toTxt b ++ f ps
+  f (Color r g b _:ps) = toTxt r ++ toTxt g ++ toTxt b ++ f ps
   txt = "P3\n" ++ show w ++ " " ++ show h ++ " 255\n" ++ f pixels
 
 runMario :: Genome -> IO Genome
@@ -45,7 +45,7 @@ runMario genome = do
   create "superMario.nes"
   getToTheGame 100
   mem <- getMemory
-  ftns <- loop (10*60) mem 0.0
+  ftns <- loop (10*60 :: Int) mem 0.0
   destroy
   putStrLn . ("My Fitness: "++) . show $ ftns
   return ( fitness .~ ftns $ genome ) -- calculateFitness (map fromIntegral memFinal) $ genome )
@@ -101,7 +101,7 @@ recordMario genome = do
   let startData = getToTheGameRecord 100
   getToTheGame 100
   mem <- getMemory
-  outs <- loop (30*60) mem
+  outs <- loop (30*60 :: Int) mem
   destroy
   return $ startData ++ outs
     where

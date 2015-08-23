@@ -80,4 +80,5 @@ instance Binary Genome where
     genes <- sequence [ get | _ <- [1..lenGenes] ]
     return $ Genome bFitness bNodes genes
 
+fmtFloatN :: RealFloat a => a -> Int -> String
 fmtFloatN x n = showFFloat (Just n) x ""
