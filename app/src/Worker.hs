@@ -66,17 +66,20 @@ loopListen (Opts ip port _ _) = do
 
 runConn :: Handle -> IO ()
 runConn sHandle = do
+  infoM rootLoggerName "waiting for number of bytes"
   nbytes <- strictDecode <$> B.hGetLine sHandle
+  infoM rootLoggerName "received number of number of bytes"
   unless (nbytes < 1)
-   $ do g0bs <- B.hGet sHandle nbytes
-        infoM rootLoggerName $ "received " ++ show nbytes ++ " bytes"
+   $ do infoM rootLoggerName "Number of bytes was >= 1"
+        g0bs <- B.hGet sHandle nbytes
+        infoM rootLoggerName $ "received genome (" ++ show nbytes ++ ") bytes"
         g0 <- strictDecode <$> return g0bs :: IO Genome
         g1 <- strictEncode <$> if debug then return $ set fitness 42 g0
                                         else M.runMario g0
         let g1bytes = strictEncode $ B.length g1
         hPutStrLn sHandle g1bytes
         B.hPut sHandle g1
-        infoM rootLoggerName $ "sent " ++ show (B.length g1) ++ " bytes"
+        infoM rootLoggerName $ "sent genome (" ++ show (B.length g1) ++ ") bytes"
         runConn sHandle 
 
 strictEncode :: Binary a => a -> B.ByteString

@@ -8,12 +8,10 @@ import Control.Lens
 import qualified Data.ByteString as B (writeFile, pack)
 import Data.List (maximumBy)
 import Data.Maybe (fromJust)
+import GHC.Word
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
 import Control.Exception (AsyncException(..),catch,throw)
-import qualified Vision.Image.Storage.DevIL as F
-import qualified Vision.Image as F
-import Vision.Primitive
 
 getToTheGame n
  | n == 0 = stepFull defaultJoystick
@@ -31,8 +29,16 @@ getToTheGameRecord n
 
 drawImage name = do
   img <- getImage
-  let imgRAW = F.fromFunction (Z :. 256 :. 256) (ptToPix img) :: F.RGBA
-  F.save (F.PNG) (name ++ ".png") imgRAW
+  writePPM (name ++ ".ppm") 256 256 img
+
+writePPM :: String -> Int -> Int -> [Color] -> IO ()                            
+writePPM name w h pixels = writeFile name txt where
+  toTxt :: Word8 -> String
+  toTxt = (++ " ") . show . (fromIntegral :: Word8 -> Int)
+  f :: [Color] -> String
+  f [] = ""
+  f (Color r g b a:ps) = toTxt r ++ toTxt g ++ toTxt b ++ f ps
+  txt = "P3\n" ++ show w ++ " " ++ show h ++ " 255\n" ++ f pixels
 
 runMario genome = do
   create "superMario.nes"
@@ -99,10 +105,6 @@ recordMario genome = do
       loop 0 _ = return []
       loop n mem = step (outputs mem) >>= loop (n-1) >>= (\xs -> return $ (outputs mem) : xs)
       outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
-
-ptToPix img (Z :. y :. x) = F.RGBAPixel r g b a
-  where
-    Color r g b a = img !! (256*y+x)
 
 marioMain = do
   let gen = randomRs (0.0,1.0) $ mkStdGen 23
