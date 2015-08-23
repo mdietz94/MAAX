@@ -1,3 +1,4 @@
+module Worker where
 import Types
 import qualified Mario as M
 

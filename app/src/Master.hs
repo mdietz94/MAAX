@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+module Master where
 import Types
 import Mario
 import NeuralNetwork hiding (run)

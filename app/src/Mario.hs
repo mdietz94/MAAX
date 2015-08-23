@@ -5,14 +5,12 @@ import Types
 import NeuralNetwork
 import System.Random
 import Control.Lens
-import qualified Data.ByteString as B (writeFile, pack)
 import Data.List (maximumBy)
 import Data.Maybe (fromJust)
 import GHC.Word
-import Foreign.Ptr
-import Foreign.Marshal.Alloc
 import Control.Exception (AsyncException(..),catch,throw)
 
+getToTheGame :: Int -> IO [Word8]
 getToTheGame n
  | n == 0 = stepFull defaultJoystick
  | n < 5 = stepFull (Joystick False False False False True False False False) >> getToTheGame (n-1)
@@ -20,6 +18,7 @@ getToTheGame n
  | n < 20 = stepFull (Joystick False False False False True False False False) >> getToTheGame (n-1)
  | otherwise = stepFull defaultJoystick >> getToTheGame (n-1)
 
+getToTheGameRecord :: Int -> [Joystick]
 getToTheGameRecord n
  | n == 0 = [defaultJoystick]
  | n < 5 = (Joystick False False False False True False False False) : getToTheGameRecord (n-1)
@@ -27,6 +26,7 @@ getToTheGameRecord n
  | n < 20 = (Joystick False False False False True False False False) : getToTheGameRecord (n-1)
  | otherwise = defaultJoystick : getToTheGameRecord (n-1)
 
+drawImage :: String -> IO ()
 drawImage name = do
   img <- getImage
   writePPM (name ++ ".ppm") 256 256 img
@@ -40,6 +40,7 @@ writePPM name w h pixels = writeFile name txt where
   f (Color r g b a:ps) = toTxt r ++ toTxt g ++ toTxt b ++ f ps
   txt = "P3\n" ++ show w ++ " " ++ show h ++ " 255\n" ++ f pixels
 
+runMario :: Genome -> IO Genome
 runMario genome = do
   create "superMario.nes"
   getToTheGame 100
@@ -63,6 +64,7 @@ runMarioSpecies (s,m,fit,rep,gen) = do
   let max_g = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gen'
   return (s,max_g^.fitness,sum_f,max_g,gen')
 
+stepMarioNetwork :: (Int, [Species], [Float]) -> IO (Int, Population, [Float])
 stepMarioNetwork (gInnov,p0,gen) = do
   p1 <- sequence . map runMarioSpecies $ p0
   let stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
@@ -73,7 +75,7 @@ stepMarioNetwork (gInnov,p0,gen) = do
   putStrLn . ("Top Fitness: " ++) . show . (^.fitness) . fittestGenome $ p4
   return ( reproduce gen marioConfig gInnov p4 )
 
-
+stepNetwork :: Population -> (Int, Population, [Float]) -> Config -> (Int, Population, [Float])
 stepNetwork p0 (gInnov,p1,gen) config = reproduce gen config gInnov p5
   where
     p2 = map calculateSpecies p1
@@ -86,13 +88,14 @@ stepNetwork p0 (gInnov,p1,gen) config = reproduce gen config gInnov p5
         sum_f = foldl (\a g -> a + g^.fitness) 0.0 gen
         max_g = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gen
 
-
+runMarioNetwork :: Int -> (Int, Population, [Float]) -> IO Population
 runMarioNetwork 0 (_,p0,_) = return p0
 runMarioNetwork n st@(_,p0,_) = (runMarioNetwork (n-1) =<< stepMarioNetwork st) `catch` handleUserInterrupt
   where
     handleUserInterrupt UserInterrupt = return p0
     handleUserInterrupt e = throw e
 
+recordMario :: Genome -> IO [Joystick]
 recordMario genome = do
   create "superMario.nes"
   let startData = getToTheGameRecord 100
@@ -103,25 +106,27 @@ recordMario genome = do
   return $ startData ++ outs
     where
       loop 0 _ = return []
-      loop n mem = step (outputs mem) >>= loop (n-1) >>= (\xs -> return $ (outputs mem) : xs)
+      loop n mem = step (outputs mem) >>= loop (n-1) >>= (\xs -> return $ outputs mem : xs)
       outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
 
+marioMain :: IO ()
 marioMain = do
   let gen = randomRs (0.0,1.0) $ mkStdGen 23
   let (gInnov,p0) = initPopulation gen marioConfig
   finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
-  let bestGenome = fittestGenome $ finalPop
+  let bestGenome = fittestGenome finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
   savePopulation "last_population.bin" finalPop
   joydata <- recordMario bestGenome
   saveAsFM2 "best.fm2" joydata
 
+loadPop :: IO  ()
 loadPop = do
   p0 <- loadPopulation "last_population.bin"
   let gInnov = maximum . map _innovation  .concatMap _genes . concatMap (\(_,_,_,_,gs) -> gs) $ p0
   let gen = randomRs (0.0,1.0) $ mkStdGen 23
   finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
-  let bestGenome = fittestGenome $ finalPop
+  let bestGenome = fittestGenome finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
   savePopulation "last_population.bin" finalPop
   joydata <- recordMario bestGenome
