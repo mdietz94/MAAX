@@ -41,7 +41,7 @@ library
   default-language:    Haskell2010
   extra-lib-dirs:      /home/justin/code/MAAX/app/tom7
   extra-libraries:     emulator
-  ghc-options: -Wall
+  ghc-options: -Wall -O2
 
 executable MAAX-mario
   main-is:             Main.hs
@@ -60,7 +60,7 @@ executable MAAX-mario
 
   hs-source-dirs:      mario
   default-language:    Haskell2010
-  ghc-options: -Wall
+  ghc-options: -Wall -O2
     --  -threaded
     -- -fGprof-auto
     -- -rtsopts
@@ -90,7 +90,7 @@ executable MAAX-cloud
                      , stm
   hs-source-dirs:      cloud
   default-language:    Haskell2010
-  ghc-options: -Wall
+  ghc-options: -Wall -O2
 
 
 

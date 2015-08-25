@@ -66,19 +66,18 @@ instance Binary Message
 - back -}
 pingServer :: Process ()
 pingServer = do
-  MsgInit mpid <- expect
   mypid <- getSelfPid
-  send mpid (MsgFitness mypid Nothing)
   forever $ do
     msg <- expect
     case msg of
-      MsgNoWork _ -> do
+      MsgNoWork mpid -> do
         liftIO $ threadDelay 1000000
         send mpid (MsgFitness mypid Nothing)
-      MsgGenome _ (gid,genome0) -> do
+      MsgGenome mpid (gid,genome0) -> do
         genome <- liftIO $ M.runMario genome0
         send mpid (MsgFitness mypid (Just (gid,genome^.fitness)))
         say $ printf "completed %d:%f" gid (genome^.fitness)
+      MsgInit mpid -> send mpid (MsgFitness mypid Nothing)
       m -> error $ "unexpected " ++ show m    
 
 remotable ['pingServer]
@@ -99,7 +98,7 @@ master c peers = do
   mapM_ monitor ps --will let us know if slave fails
 
   (num,p0) <- liftIO $ loadMaxPopulation c
-  _ <- runPopulation (num,p0) 0
+  _ <- runPopulation (num,p0) num
 
   say "all done"
   terminate
