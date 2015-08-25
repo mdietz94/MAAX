@@ -21,8 +21,6 @@ cabal-version:       >=1.10
 library 
   exposed-modules:    Emulator
                     , Types
-                    , Master
-                    , Worker
                     , Mario
                     , NeuralNetwork
 -- other-modules:

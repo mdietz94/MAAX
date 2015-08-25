@@ -3,7 +3,7 @@ module Main where
 
 import Types hiding (genome)
 import qualified Mario as M
-import NeuralNetwork (loadPopulation, savePopulation, fittestGenome, marioConfig)
+import NeuralNetwork (loadPopulation, savePopulation, fittestGenome, marioConfig, initPopulation)
 import Emulator (saveAsFM2)
 
 import Control.Concurrent (threadDelay)
@@ -54,12 +54,11 @@ distribMain master frtable = do
     _ -> print "Usage: MAAX-cloud <master|slave> [ <ip_address> <port> ]"
 
 
-data Message = MsgServers [ProcessId]
-             | MsgInit ProcessId
+data Message = MsgInit ProcessId
              | MsgNoWork ProcessId
              | MsgGenome ProcessId (Int,Genome)
              | MsgFitness ProcessId (Maybe (Int,Float))
-             deriving (Typeable,Generic)
+             deriving (Show,Typeable,Generic)
 
 instance Binary Message
 
@@ -67,23 +66,25 @@ instance Binary Message
 - back -}
 pingServer :: Process ()
 pingServer = do
-  MsgInit from <- expect
+  MsgInit mpid <- expect
   mypid <- getSelfPid
-  send from (MsgFitness mypid Nothing)
-  forever $
-    receiveWait 
-      [ match $ \(MsgNoWork _) -> do
-          liftIO $ threadDelay 1000000
-          send from (MsgFitness mypid Nothing)
-      , match $ \(MsgGenome _ (gid,genome0)) -> do
-          genome <- liftIO $ M.runMario genome0
-          send from (MsgFitness mypid (Just (gid,genome^.fitness)))
-      ]
+  send mpid (MsgFitness mypid Nothing)
+  forever $ do
+    msg <- expect
+    case msg of
+      MsgNoWork _ -> do
+        liftIO $ threadDelay 1000000
+        send mpid (MsgFitness mypid Nothing)
+      MsgGenome _ (gid,genome0) -> do
+        genome <- liftIO $ M.runMario genome0
+        send mpid (MsgFitness mypid (Just (gid,genome^.fitness)))
+        say $ printf "completed %d:%f" gid (genome^.fitness)
+      m -> error $ "unexpected " ++ show m    
 
 remotable ['pingServer]
 
 master :: Config -> [NodeId] -> Process ()
-master _ peers = do
+master c peers = do
 
   liftIO $ mapM_ print peers
 
@@ -91,13 +92,14 @@ master _ peers = do
   ps <- forM peers $ \nid -> do
           say $ printf "spawing on %s" (show nid)
           spawn nid $(mkStaticClosure 'pingServer)
+
   mypid <- getSelfPid
   forM_ ps $ \pid -> send pid (MsgInit mypid)
 
   mapM_ monitor ps --will let us know if slave fails
 
-  (num,p0) <- liftIO loadMaxPopulation
-  _ <- runPopulation (0,p0) num
+  (num,p0) <- liftIO $ loadMaxPopulation c
+  _ <- runPopulation (num,p0) 0
 
   say "all done"
   terminate
@@ -112,7 +114,7 @@ runPopulation (gInnov,p0) n = do
   liftIO $ savePopulation ("./data/" ++ show (n+1) ++ ".bin") p2
   joydata <- liftIO $ M.recordMario (fittestGenome p2)
   liftIO $ saveAsFM2 ("./data/" ++ show (n+1) ++ ".fm2") joydata
-  runPopulation (gInnov',p2) (n+1)
+  runPopulation (gInnov',p2) (n+2)
 
 run :: Population -> Process Population
 run pop = do
@@ -132,7 +134,8 @@ sendAll todo0 = do
     ntodo = length todo0
     loop mypid todo done info
       | length done == ntodo = return done
-      | otherwise =
+      | otherwise = do
+        say $ printf "todo: %d done: %d" (length todo) (length done)
         receiveWait
           [ match $ \(ProcessMonitorNotification ref pid reason) -> do
               say (show pid ++ " ref: " ++ show ref ++ " died: " ++ show reason)
@@ -145,14 +148,20 @@ sendAll todo0 = do
                 then do
                   let (work : todo') = todo
                   send from (MsgGenome mypid work)
+                  say $ printf "sent %s %d" (show from) (fst work)
                   loop mypid todo' done' (Map.insert from work info)
                 else do
                   send from (MsgNoWork mypid)
                   loop mypid todo done' (Map.delete from info)
           ]
 
-loadMaxPopulation :: IO (Int, Population)
-loadMaxPopulation = loadMaxPop 1
+loadMaxPopulation :: Config -> IO (Int, Population)
+loadMaxPopulation c = do
+  exists <- doesFileExist "./data/0.bin"
+  rng <- newStdGen
+  if not exists
+    then return (initPopulation (randomRs (0.0,1.0) rng) c)
+    else loadMaxPop 1
   where
     loadMaxPop n = do
       exists <- doesFileExist $ "./data/" ++ show n ++ ".bin"
