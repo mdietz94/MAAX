@@ -28,6 +28,7 @@ module Emulator where
     fromListJ :: [Bool] -> Joystick
     fromListJ [r,l,d,u,b,a] = Joystick r l d u False False b a
     fromListJ [r,l,d,u,st,se,b,a] = Joystick r l d u st se b a
+    fromListJ _ = error "fromListJ"
 
     toListJ :: Joystick -> [Bool]
     toListJ (Joystick r l d u t s b a) = [r,l,d,u,t,s,b,a]

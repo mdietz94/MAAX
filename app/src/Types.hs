@@ -59,6 +59,12 @@ data Genome = Genome { _fitness :: Float
                      } deriving (Eq)
 makeClassy ''Genome
 
+type Population = [Species]
+type Species = ( Int                 --stagnation
+               , Float               --max fitness
+               , Float               --sum of fitnesses
+               , Genome              --representative genome
+               , [Genome])           --rest of genomes
 
 instance Show Genome where
   show (Genome f n gs) = "Genome[" ++ fmtFloatN f 4 ++ "] [" ++show n ++

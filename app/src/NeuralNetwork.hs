@@ -62,12 +62,6 @@ marioConfig = Config { _numInputs = 169
 getInnovation :: HasGenome s => s -> Int -> Gene
 getInnovation genome inn = fromJust . find (\x -> x^.innovation == inn) $ genome^.genes
 
-type Population = [Species]
-type Species = ( Int                 --stagnation
-               , Float               --max fitness
-               , Float               --sum of fitnesses
-               , Genome              --representative genome
-               , [Genome])           --rest of genomes
 
 savePopulation :: String -> Population -> IO ()
 savePopulation = encodeFile
@@ -131,6 +125,7 @@ evalSpecies fitnessFunc s@(i0,max_f0,sum_f0,g0,gs0) = (i0,max_f,sum_f,g0,gs') wh
 --produces the next generation of genomes
 --assumes the list of genomes is sort in ascending order by fitness
 reproduce :: [Float] -> Config -> Int -> Population -> (Int,Population,[Float])
+reproduce [] _ _ _ = error "reproduce: not enough random numbers"
 reproduce (r:gen) config gInnov0 population = (gInnov'',population',gen') where
   p_sum_f = foldl' (\a (_,_,f,_,_) -> a + f) 0.0 population --count population sum fitness
   prev_species = map (\(i0,m,a,g,gs) ->
@@ -225,7 +220,7 @@ breedChild config gInnov gs (r:(r1:(r2:rs))) = (gInnov',monster,rs'')
         (child,rs') | r < 0.7 = crossover mom dad rs
                     | otherwise = (getElementR gs r1, r2:rs)
         (gInnov',monster,rs'') = mutate config gInnov child rs'
-
+breedChild _ _ _ _ = error "breedChild: not enough random numbers"
 
 --assumes the genomes in species are sorted in ascending order
 cullSpecies :: Int -> Species-> Species
@@ -254,6 +249,7 @@ evaluateGenome config inputs (Genome _ maxNode genes) = outs
                 isMyGene g = g^.enabled && g^.output == n
 
 addNode :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
+addNode _ _ [] = error "addNode: not enough random numbers"
 addNode gInnov g0@(Genome _ numnodes genes) (r:rs)
   | null enabledGenes = (gInnov,g0,r:rs)
   | otherwise = (gInnov+2,Genome 0.0 (numnodes+1) genes', rs)
@@ -278,8 +274,10 @@ addLink config gInnov (Genome fit nodes genes) (r:(r1:rs))
         disjointPairs = allPairs \\ gPairs
         (inp,out) = getElementR disjointPairs r
         newGene = Gene inp out (r1 * 4.0 - 2.0) True gInnov
+addLink _ _ _ _ = error "addLink: not enough random numbers"
 
 disableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
+disableGene _ _ [] = error "disableGene: not enough random numbers"
 disableGene gInnov g0@(Genome fit nodes genes) (r:rs)
   | null enabledGenes = (gInnov,g0,r:rs)
   | otherwise = (gInnov, Genome fit nodes genes', rs)
@@ -289,6 +287,7 @@ disableGene gInnov g0@(Genome fit nodes genes) (r:rs)
         genes' = (enabled .~ False $ rGene) : delete rGene genes
 
 enableGene :: Int -> Genome -> [Float] -> (Int,Genome,[Float])
+enableGene _ _ [] = error "enableGene: not enough random numbers"
 enableGene gInnov g0@(Genome fit nodes genes) (r:rs)
   | null disabled = (gInnov, g0,r:rs)
   | otherwise = (gInnov, Genome fit nodes genes', rs)
@@ -307,6 +306,7 @@ uncurry3 f (a,b,c) = f a b c
 mutate :: Config -> Int -> Genome -> [Float] -> (Int,Genome,[Float])
 mutate config gInnov genome rs = mutateH gInnov (perturbWeights genome rs) (drop (genome^.genes.to length) rs)
   where
+    mutateH _ _ [] = error "mutateH: not enough random numbers"
     mutateH gInnov genome (r:rs)
       | r < 0.05 = uncurry3 (mutate config) $ addLink config gInnov genome rs
       | r < 0.08 = uncurry3 (mutate config) $ addNode gInnov genome rs

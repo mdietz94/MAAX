@@ -41,9 +41,9 @@ library
                      , optparse-applicative
   hs-source-dirs:      src
   default-language:    Haskell2010
-  extra-lib-dirs:      ./tom7
+  extra-lib-dirs:      /home/justin/code/MAAX/app/tom7
   extra-libraries:     emulator
-  ghc-options: -O2 -Wall
+  ghc-options: -Wall
 
 executable MAAX-mario
   main-is:             Main.hs
@@ -62,7 +62,7 @@ executable MAAX-mario
 
   hs-source-dirs:      mario
   default-language:    Haskell2010
-  ghc-options: -O2 -Wall
+  ghc-options: -Wall
     --  -threaded
     -- -fGprof-auto
     -- -rtsopts
@@ -80,15 +80,16 @@ executable MAAX-cloud
                      , random-shuffle
                      , containers
                      , lens
-                     , friday
-                     , friday-devil
                      , binary
                      , directory
                      , distributed-process
                      , distributed-process-simplelocalnet
                      , distributed-static
                      , network-transport-tcp
-                     , template-haskell
+                     , template-haskell 
+                     , monad-loops
+                     , vector
+                     , stm
   hs-source-dirs:      cloud
   default-language:    Haskell2010
   ghc-options: -Wall
