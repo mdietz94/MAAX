@@ -308,8 +308,8 @@ mutate config gInnov genome rs = mutateH gInnov (perturbWeights genome rs) (drop
   where
     mutateH _ _ [] = error "mutateH: not enough random numbers"
     mutateH gInnov genome (r:rs)
-      | r < 0.05 = uncurry3 (mutate config) $ addLink config gInnov genome rs
-      | r < 0.08 = uncurry3 (mutate config) $ addNode gInnov genome rs
+      | r < 0.1 = uncurry3 (mutate config) $ addLink config gInnov genome rs
+      | r < 0.16 = uncurry3 (mutate config) $ addNode gInnov genome rs
 --      | r < 0.012 = uncurry3 (mutate config) $ disableGene gInnov genome rs
 --      | r < 0.015 = uncurry3 (mutate config) $ enableGene gInnov genome rs
       | otherwise = (gInnov, genome, r:rs)
