@@ -40,7 +40,7 @@ marioConfig = Config { _numInputs = 169
                      , _populationSize = 200
                      , _speciesMaxSize = 60
                      , _stagnationMax = 15
-                     , _speciationThreshold = 3.0
+                     , _speciationThreshold = 4.0
                      , _weightedVsTopology = 0.6
                      , _crossoverChance = 0.75
                      , _smallScale = 0.2
