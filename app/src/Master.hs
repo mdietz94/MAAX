@@ -102,8 +102,6 @@ sender ntodo ndone todo done sock0 = withSocketsDo $ loop sock0
       infoM rootLoggerName "Connection accepted!"
       sHandle <- socketToHandle sck ReadWriteMode
       _ <- forkIO $ runLoop sHandle
-      --this is needed so sender terminates, when sender is modified
-      --so it never closes the socket this will not be needed
       isDone <- (== ntodo) <$> readMVar ndone
       unless isDone (loop sock)
     runLoop :: Handle -> IO ()
