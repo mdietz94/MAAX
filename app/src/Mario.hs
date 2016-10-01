@@ -22,9 +22,9 @@ getToTheGame n
 
 getToTheGameRecord n
  | n == 0 = [defaultJoystick]
- | n < 5 = (Joystick False False False False True False False False) : getToTheGameRecord (n-1)
+ | n < 5 = Joystick False False False False True False False False : getToTheGameRecord (n-1)
  | n < 10 = defaultJoystick : getToTheGameRecord (n-1)
- | n < 20 = (Joystick False False False False True False False False) : getToTheGameRecord (n-1)
+ | n < 20 = Joystick False False False False True False False False : getToTheGameRecord (n-1)
  | otherwise = defaultJoystick : getToTheGameRecord (n-1)
  
 drawImage :: String -> IO ()
@@ -61,17 +61,17 @@ runMario genome = do
 
 runMarioSpecies :: Species -> IO Species
 runMarioSpecies (s,m,fit,rep,gen) = do
-  gen' <- sequence . map runMario $ gen
+  gen' <- mapM runMario gen
   let sum_f = foldl (\a g -> a + g^.fitness) 0.0 gen'
   let max_g = maximumBy (\a b -> compare (a^.fitness) (b^.fitness)) gen'
   return (s,max_g^.fitness,sum_f,max_g,gen')
 
 stepMarioNetwork (gInnov,p0,gen) = do
-  p1 <- sequence . map runMarioSpecies $ p0
+  p1 <- mapM runMarioSpecies p0
   let stagnant = zipWith (<=) (map (\(_,m,_,_,_) -> m) p1) (map (\(_,m,_,_,_) -> m) p0)
   let p2 = zipWith (\a (s,m,fit,rep,gen) -> if a then (s+1,m,fit,rep,gen) else (0,m,fit,rep,gen)) stagnant p1
   let p3 = map sortSpecies p2
-  putStrLn . show $ p3
+  print p3
   let p4 = cull (marioConfig^.speciesMaxSize) (marioConfig^.stagnationMax) p3
   putStrLn . ("Top Fitness: " ++) . show . (^.fitness) . fittestGenome $ p4
   return ( reproduce gen marioConfig gInnov p4 )
@@ -106,7 +106,7 @@ recordMario genome = do
   return $ startData ++ outs
     where
       loop 0 _ = return []
-      loop n mem = step (outputs mem) >>= loop (n-1) >>= (\xs -> return $ (outputs mem) : xs)
+      loop n mem = step (outputs mem) >>= loop (n-1) >>= (\xs -> return $ outputs mem : xs)
       outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
 
 
@@ -114,7 +114,7 @@ marioMain = do
   let gen = randomRs (0.0,1.0) $ mkStdGen 23
   let (gInnov,p0) = initPopulation gen marioConfig
   finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
-  let bestGenome = fittestGenome $ finalPop
+  let bestGenome = fittestGenome finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
   savePopulation "last_population.bin" finalPop
   joydata <- recordMario bestGenome
@@ -125,7 +125,7 @@ loadPop = do
   let gInnov = maximum . map _innovation  .concatMap _genes . concatMap (\(_,_,_,_,gs) -> gs) $ p0
   let gen = randomRs (0.0,1.0) $ mkStdGen 23
   finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
-  let bestGenome = fittestGenome $ finalPop
+  let bestGenome = fittestGenome finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
   savePopulation "last_population.bin" finalPop
   joydata <- recordMario bestGenome
@@ -152,8 +152,8 @@ screenY = (!!0x03B8)
 getTile :: [Int] -> (Int,Int) -> Bool
 getTile mem (dx,dy) = res
   where
-    x = (marioX mem) + dx - 8
-    y = (marioY mem) + dy - 16
+    x = marioX mem + dx - 8
+    y = marioY mem + dy - 16
     page = (x `quot` 256) `rem` 2
     subx = (x `rem` 256) `quot` 16
     suby = (y - 32) `quot` 16
@@ -175,9 +175,9 @@ getInputs mem = do
   dx <- [-6*16,-5*16..6*16]
   dy <- [-6*16,-5*16..6*16]
   let tile = getTile mem (dx,dy)
-  let dist = map (\(x,y) -> (abs $ x - (marioX mem)+dx, abs $ y - (marioY mem)+ dy)) (getSprites mem)
-  let sprite = not . null . filter (\(distx,disty) -> distx < 8 && disty < 8) $ dist
-  return $ if tile && (marioY mem) + dy < 0x1B0 then 1.0 else (if sprite then -1.0 else 0.0)
+  let dist = map (\(x,y) -> (abs $ x - marioX mem + dx, abs $ y - marioY mem + dy)) (getSprites mem)
+  let sprite = any (\(distx,disty) -> distx < 8 && disty < 8) dist
+  return $ if tile && marioY mem + dy < 0x1B0 then 1.0 else (if sprite then -1.0 else 0.0)
 
 calculateFitness :: [Int] -> Float
 calculateFitness mem = fromIntegral $ if marX > 3186 then marX + 1000 else marX
