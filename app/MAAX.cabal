@@ -29,8 +29,6 @@ executable MAAX
                      , random-shuffle
                      , containers
                      , lens
-                     , friday
-                     , friday-devil
                      , binary
                      , directory
   hs-source-dirs:      src
@@ -52,8 +50,6 @@ executable MAAX-worker
                      , random
                      , containers
                      , lens
-                     , friday
-                     , friday-devil
                      , binary
                      , socket
                      , network
@@ -75,8 +71,6 @@ executable MAAX-master
                      , random
                      , containers
                      , lens
-                     , friday
-                     , friday-devil
                      , binary
                      , socket
                      , network

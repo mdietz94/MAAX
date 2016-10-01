@@ -17,6 +17,7 @@ cabal.sandbox.config
 .stack-work/
 app/tom7/*.so
 app/tom7/fceulib/*.so
+app/data
 #vim
 *.swp
 *.swo
