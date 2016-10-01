@@ -12,6 +12,7 @@ import Data.Word (Word8)
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
 import Control.Exception (AsyncException(..),catch,throw)
+import System.Directory (doesFileExist)
 
 getToTheGame n
  | n == 0 = stepFull defaultJoystick
@@ -99,6 +100,7 @@ runMarioNetwork n st@(_,p0,_) = (runMarioNetwork (n-1) =<< stepMarioNetwork st) 
     handleUserInterrupt UserInterrupt = return p0
     handleUserInterrupt e = throw e
 
+{- todo record best genome on interrup -}
 recordMario genome = do
   create "superMario.nes"
   let startData = getToTheGameRecord 100
@@ -112,30 +114,32 @@ recordMario genome = do
       loop n mem = step (outputs mem) >>= loop (n-1) >>= (\xs -> return $ outputs mem : xs)
       outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
 
+lstPopFName :: String
+lstPopFName = "lastPopulation.bin"
 
+marioMain :: IO ()
 marioMain = do
   let gen = randomRs (0.0,1.0) $ mkStdGen 23
-  let (gInnov,p0) = initPopulation gen marioConfig
+  (gInnov,p0) <- do
+    isLastSaved <- doesFileExist lstPopFName
+    if isLastSaved
+      then do
+        p0 <- loadPopulation lstPopFName
+        let gInnov = maximum . map _innovation  .concatMap _genes . concatMap (\(_,_,_,_,gs) -> gs) $ p0
+        return (gInnov, p0)
+      else
+        return $ initPopulation gen marioConfig
   finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
   let bestGenome = fittestGenome finalPop
   putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
-  savePopulation "last_population.bin" finalPop
+  savePopulation lstPopFName finalPop
   joydata <- recordMario bestGenome
   saveAsFM2 "best.fm2" joydata
 
-loadPop = do
-  p0 <- loadPopulation "last_population.bin"
-  let gInnov = maximum . map _innovation  .concatMap _genes . concatMap (\(_,_,_,_,gs) -> gs) $ p0
-  let gen = randomRs (0.0,1.0) $ mkStdGen 23
-  finalPop <- runMarioNetwork 32 (gInnov,p0,gen)
-  let bestGenome = fittestGenome finalPop
-  putStrLn . ("Top Fitness: "++) . show . (^.fitness) $ bestGenome
-  savePopulation "last_population.bin" finalPop
-  joydata <- recordMario bestGenome
-  saveAsFM2 "best.fm2" joydata
 
 {-
-   Here is some specific Mario code.  Meant to be used in tested Neural Network before we get the ability to get data from the screen.
+   Here is some specific Mario code.  Meant to be used in tested Neural Network
+   before we get the ability to get data from the screen.
 -}
 
 marioX :: [Int] -> Int

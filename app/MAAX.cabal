@@ -25,6 +25,7 @@ executable MAAX
   build-depends:       base
                      , bitwise >=0.1 && <0.2
                      , bytestring
+                     , directory
                      , random
                      , random-shuffle
                      , containers
@@ -47,6 +48,7 @@ executable MAAX-worker
   build-depends:       base >=4.8 && <4.9
                      , bitwise >=0.1 && <0.2
                      , bytestring
+                     , directory
                      , random
                      , containers
                      , lens
@@ -68,6 +70,8 @@ executable MAAX-master
   build-depends:       base >=4.8 && <4.9
                      , bitwise >=0.1 && <0.2
                      , bytestring
+                     , directory
+                     , random
                      , random
                      , containers
                      , lens
