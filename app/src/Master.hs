@@ -46,8 +46,8 @@ runPopulation (gInnov,p0,gen) n sock = do
   savePopulation ("./data/" ++ show n ++ ".bin") p1
   let (gInnov',p2,gen') = stepNetwork p0 (gInnov,p1,gen) marioConfig
   savePopulation ("./data/" ++ show (n+1) ++ ".bin") p2
-  joydata <- recordMario (fittestGenome p2)
-  saveAsFM2 ("./data/" ++ show (n+1) ++ ".fm2") joydata
+  joydata <- recordMario (fittestGenome p1)
+  saveAsFM2 ("./data/" ++ show n ++ ".fm2") joydata
   runPopulation (gInnov',p2,gen') (n+1) sock
 
 loadMaxPopulation :: IO (Int, Population)

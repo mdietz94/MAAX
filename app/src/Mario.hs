@@ -55,8 +55,11 @@ runMario genome = do
       loop 0 _ f = return f
       loop n mem m_fit = do
         mem' <- stepFull (outputs mem)
-        let fit = calculateFitness . map fromIntegral $ mem'
-        loop (n-1) mem' (max fit m_fit)
+        if marioAlive (map fromIntegral mem')
+         then do
+              let fit = calculateFitness . map fromIntegral $ mem'
+              loop (n-1) mem' (max fit m_fit)
+         else loop 0 mem' m_fit
       outputs mem = fromListJ . map (>0.5) $ evaluateGenome marioConfig (getInputs . map fromIntegral $  mem) genome
 
 runMarioSpecies :: Species -> IO Species
@@ -142,6 +145,9 @@ marioX mem = (mem!!0x6D) * 0x100 + toSigned (mem!!0x86)
 
 marioY :: [Int] -> Int
 marioY mem = (mem!!0x03B8) + 16
+
+marioAlive :: [Int] -> Bool
+marioAlive mem = (mem!!0x075A) == 2
 
 screenX :: [Int] -> Int
 screenX = (!!0x03AD)
